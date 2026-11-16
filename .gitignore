@@ -6,3 +6,8 @@ coverage/
 *.log
 .env*
 !.env.example
+
+# Signing keystores must never be committed
+*.p12
+*.jks
+*.keystore

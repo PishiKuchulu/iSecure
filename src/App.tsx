@@ -904,7 +904,7 @@ export default function App() {
             className="flex-1 flex flex-col items-center justify-center p-6 text-center space-y-4"
           >
             <div className="w-14 h-14 bg-gray-900 dark:bg-white text-white dark:text-gray-900 rounded-2xl flex items-center justify-center font-black text-base italic shadow-md">
-              PS
+              iS
             </div>
             <div className="w-7 h-7 rounded-full border-2 border-gray-300 dark:border-zinc-700 border-t-blue-500 animate-spin" />
           </motion.div>
@@ -981,7 +981,7 @@ export default function App() {
             </div>
 
             <div className="w-14 h-14 bg-gray-900 dark:bg-white text-white dark:text-gray-900 rounded-2xl flex items-center justify-center font-black text-base italic shadow-md">
-              PS
+              iS
             </div>
 
             <div>
@@ -1226,7 +1226,7 @@ export default function App() {
                 {/* Brand */}
                 <div className="flex items-center gap-3">
                   <div className="w-9 h-9 bg-gray-900 dark:bg-white text-white dark:text-gray-900 rounded-xl flex items-center justify-center font-black text-xs italic shadow-sm flex-shrink-0">
-                    PS
+                    iS
                   </div>
                   <div>
                     <h1 className="text-sm font-black text-gray-950 dark:text-white flex items-center gap-1.5 leading-tight">

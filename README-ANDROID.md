@@ -138,3 +138,27 @@ BUILD SUCCESSFUL.
   this app copied (when readable), copy success/failure is reported
   honestly in both Vault and Generator views, and locking the vault also
   clears an app-copied secret.
+
+## Branded icon + signed release (2026-11-16)
+
+Launcher icon replaced with Farzad's approved artwork (shield, no key /
+padlock / text / frame): all mipmap densities regenerated (legacy, round
+and adaptive foreground), adaptive background color #02091B sampled from
+the artwork, and all splash screens regenerated from the same artwork.
+The leftover "PS" monogram in the loading screens became "iS".
+
+Release signing is env-injected (`ISECURE_KEYSTORE_PATH`,
+`ISECURE_KEYSTORE_PASSWORD`, `ISECURE_KEY_ALIAS`, `ISECURE_KEY_PASSWORD`;
+see android/app/build.gradle) — the keystore is never committed. Local
+signed build verified 2026-11-16: `assembleRelease` BUILD SUCCESSFUL,
+apksigner cert SHA-256
+f411316843add5339f1994f23c903b63b65a5cdd4e5d55d595bbe0bcbbd7439b
+(the shared Anvex/MarbleMD release key, alias `marblemd`, RSA 3072, valid
+to Oct 2056). Keystore SHA-256 of the .p12 file itself:
+47db35b7beda1277763cf97c4f2e5f8582148a9cf7942f35a713e5d957c8b317.
+
+CI: `.github/workflows/release.yml` builds the signed APK on every push
+to main and publishes GitHub Release v1.0.0; the four ISECURE_* values
+live in the repository's Actions secrets. The keystore is also backed up
+in Farzad's Google Drive as `marblemd-release.p12` (MD5-verified upload,
+2026-11-16).
