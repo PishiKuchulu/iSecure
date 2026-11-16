@@ -35,12 +35,11 @@ jobs:
       - name: Sync Capacitor Android project
         run: bunx cap sync android
 
-      - name: Decode keystore from secret
+      - name: Decrypt keystore
         env:
-          KEYSTORE_B64_A: ${{ secrets.ISECURE_KEYSTORE_B64_A }}
-          KEYSTORE_B64_B: ${{ secrets.ISECURE_KEYSTORE_B64_B }}
+          ISECURE_KEYSTORE_PASSWORD: ${{ secrets.ISECURE_KEYSTORE_PASSWORD }}
         run: |
-          printf '%s%s' "$KEYSTORE_B64_A" "$KEYSTORE_B64_B" | tr -d '[:space:]' | base64 -d > "$RUNNER_TEMP/release.p12"
+          openssl enc -d -aes-256-cbc -salt -pbkdf2 -md sha256 -in keystore.enc -out "$RUNNER_TEMP/release.p12" -pass env:ISECURE_KEYSTORE_PASSWORD
           ls -l "$RUNNER_TEMP/release.p12"
           sha256sum "$RUNNER_TEMP/release.p12"
 
@@ -52,6 +51,7 @@ jobs:
           ISECURE_KEY_PASSWORD: ${{ secrets.ISECURE_KEY_PASSWORD }}
         run: |
           cd android
+          chmod +x gradlew
           ./gradlew assembleRelease --no-daemon
 
       - name: Verify signature and stage APK
