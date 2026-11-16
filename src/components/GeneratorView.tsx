@@ -3,10 +3,11 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Copy, Check, RefreshCw, Lock } from 'lucide-react';
 import { LocaleStrings } from '../locales';
 import { calculateEntropy, getPasswordStrength, getSecureRandomInt } from '../utils';
+import { copyTextWithAutoClear } from '../services/clipboard';
 
 interface GeneratorViewProps {
   strings: LocaleStrings;
@@ -23,14 +24,7 @@ export default function GeneratorView({ strings, clipboardClearSeconds }: Genera
   const [generatedPassword, setGeneratedPassword] = useState('');
   const [genError, setGenError] = useState('');
   const [isCopied, setIsCopied] = useState(false);
-
-  const clearTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  useEffect(() => {
-    return () => {
-      if (clearTimerRef.current) clearTimeout(clearTimerRef.current);
-    };
-  }, []);
+  const [copyError, setCopyError] = useState('');
 
   // Generate password using Web Crypto CSPRNG (crypto.getRandomValues)
   const triggerGeneration = () => {
@@ -74,6 +68,7 @@ export default function GeneratorView({ strings, clipboardClearSeconds }: Genera
     }
 
     setGenError('');
+    setCopyError('');
     const result = [...mandatoryChars];
     const fillLength = Math.max(0, length - result.length);
 
@@ -98,18 +93,16 @@ export default function GeneratorView({ strings, clipboardClearSeconds }: Genera
 
   const handleCopyToClipboard = () => {
     if (!generatedPassword || genError) return;
-    navigator.clipboard?.writeText(generatedPassword).catch(() => {});
-    setIsCopied(true);
-
-    if (clearTimerRef.current) clearTimeout(clearTimerRef.current);
-    clearTimerRef.current = setTimeout(() => {
-      setIsCopied(false);
-      if (clipboardClearSeconds > 0) {
-        setTimeout(() => {
-          navigator.clipboard?.writeText('').catch(() => {});
-        }, Math.max(0, (clipboardClearSeconds - 2) * 1000));
+    // The clipboard service owns the auto-clear timer at module level,
+    // so leaving this view no longer cancels the clear (P-04), and a
+    // failed write is surfaced instead of showing a false "copied".
+    void copyTextWithAutoClear(generatedPassword, clipboardClearSeconds).then(ok => {
+      setIsCopied(ok);
+      setCopyError(ok ? '' : 'Copy failed — clipboard unavailable');
+      if (ok) {
+        setTimeout(() => setIsCopied(false), 2000);
       }
-    }, 2000);
+    });
   };
 
   const entropyScore = genError ? 0 : calculateEntropy(generatedPassword);
@@ -181,6 +174,9 @@ export default function GeneratorView({ strings, clipboardClearSeconds }: Genera
             {isCopied ? 'Copied' : strings.copy}
           </button>
         </div>
+        {copyError && (
+          <p className="text-[11px] text-rose-500 font-bold mt-2">{copyError}</p>
+        )}
       </div>
 
       {/* Strength and Entropy displays */}

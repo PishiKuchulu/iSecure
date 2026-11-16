@@ -42,9 +42,12 @@ import {
 import {
   deleteVaultEnvelope,
   isNativePlatform,
+  loadVault,
   loadVaultEnvelope,
+  readRawVaultData,
   saveVaultEnvelope,
 } from './services/vaultStorage';
+import { clearClipboardIfOurs } from './services/clipboard';
 import { App as CapacitorApp } from '@capacitor/app';
 
 const DashboardView = lazy(() => import('./components/DashboardView'));
@@ -138,6 +141,12 @@ export default function App() {
   // Vault gate state
   const [isSetupState, setIsSetupState] = useState<boolean>(true);
   const [isStorageReady, setIsStorageReady] = useState<boolean>(false);
+  // P-03: an existing-but-unreadable vault gets a recovery screen instead
+  // of being silently treated as "no vault" (which led to setup).
+  const [isStorageCorrupt, setIsStorageCorrupt] = useState<boolean>(false);
+  const [confirmEraseCorrupt, setConfirmEraseCorrupt] = useState<boolean>(false);
+  // P-02: user-visible persistence failure (null = last save succeeded).
+  const [persistError, setPersistError] = useState<string | null>(null);
   const storedEnvelopeRef = useRef<EncryptedVaultEnvelope | null>(null);
   const [isUnlocked, setIsUnlocked] = useState(false);
   const [isDeriving, setIsDeriving] = useState(false);
@@ -211,10 +220,21 @@ export default function App() {
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const envelope = await loadVaultEnvelope();
+      const result = await loadVault();
       if (cancelled) return;
-      storedEnvelopeRef.current = envelope;
-      setIsSetupState(!envelope);
+      if (result.status === 'ok') {
+        storedEnvelopeRef.current = result.envelope;
+        setIsSetupState(false);
+      } else if (result.status === 'empty') {
+        storedEnvelopeRef.current = null;
+        setIsSetupState(true);
+      } else {
+        // 'corrupt': a vault exists but cannot be read/parsed. Never fall
+        // into setup here — that would overwrite the stored bytes (P-03).
+        storedEnvelopeRef.current = null;
+        setIsSetupState(false);
+        setIsStorageCorrupt(true);
+      }
       setIsStorageReady(true);
     })();
     return () => {
@@ -256,6 +276,8 @@ export default function App() {
   }, [settings.theme]);
 
   const handleLockVault = useCallback(() => {
+    // Locking also drops any secret this app left in the clipboard (P-04).
+    void clearClipboardIfOurs();
     sessionKeyRef.current = null;
     sessionSaltRef.current = '';
     sessionIterationsRef.current = DEFAULT_KDF_ITERATIONS;
@@ -350,12 +372,24 @@ export default function App() {
 
       const task = saveQueueRef.current.then(async () => {
         const envelope = await encryptVaultPayload(payload, key, salt, iterations);
-        storedEnvelopeRef.current = envelope;
         await saveVaultEnvelope(envelope);
+        // Only mark the new envelope authoritative after the write has
+        // actually landed (P-02).
+        storedEnvelopeRef.current = envelope;
       });
       saveQueueRef.current = task.catch(err => {
         console.error('Failed to encrypt and persist vault:', err);
       });
+      // Surface failures to the user instead of leaving the optimistic UI
+      // pretending the change is durable (P-02). A later successful save
+      // clears the warning.
+      void task.then(
+        () => setPersistError(null),
+        () =>
+          setPersistError(
+            'Saving failed — your latest changes are NOT stored yet. Keep the app open, check available storage, then make any change to retry saving, or export a backup from Settings.'
+          )
+      );
       return task;
     },
     []
@@ -484,6 +518,31 @@ export default function App() {
     handleLockVault();
     setFailedAttempts(0);
     setShowResetModal(false);
+    setIsSetupState(true);
+  };
+
+  // P-03 recovery: export the raw (still encrypted) stored bytes so the
+  // user keeps a copy of the unreadable vault before deciding anything.
+  const handleExportCorruptVault = async () => {
+    const raw = await readRawVaultData();
+    if (!raw) return;
+    const blob = new Blob([raw], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `isecure-unreadable-vault-${new Date().toISOString().slice(0, 10)}.json`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
+  // P-03 recovery: deliberate, confirmed erase of the unreadable vault.
+  const handleEraseCorruptVault = async () => {
+    await deleteVaultEnvelope();
+    storedEnvelopeRef.current = null;
+    setIsStorageCorrupt(false);
+    setConfirmEraseCorrupt(false);
     setIsSetupState(true);
   };
 
@@ -821,6 +880,19 @@ export default function App() {
         </div>
       )}
 
+      {persistError && isUnlocked && (
+        <div className="fixed top-0 inset-x-0 z-[90] bg-rose-600 text-white text-[11px] font-bold px-4 py-2.5 flex items-center justify-between gap-3 shadow-lg">
+          <span>{persistError}</span>
+          <button
+            type="button"
+            onClick={() => setPersistError(null)}
+            className="shrink-0 px-2 py-1 bg-white/20 rounded-md cursor-pointer"
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
+
       <AnimatePresence mode="wait">
         {!isStorageReady ? (
           /* CASE 0: LOADING ENCRYPTED ENVELOPE FROM PLATFORM STORAGE */
@@ -835,6 +907,54 @@ export default function App() {
               PS
             </div>
             <div className="w-7 h-7 rounded-full border-2 border-gray-300 dark:border-zinc-700 border-t-blue-500 animate-spin" />
+          </motion.div>
+        ) : isStorageCorrupt ? (
+          /* CASE A0: VAULT EXISTS BUT IS UNREADABLE — RECOVERY (P-03) */
+          <motion.div
+            key="storage-corrupt"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="flex-1 flex flex-col items-center justify-center max-w-md w-full mx-auto p-6 text-center space-y-6"
+          >
+            <div className="w-14 h-14 bg-rose-600 text-white rounded-2xl flex items-center justify-center font-black text-2xl shadow-md">
+              !
+            </div>
+            <div className="space-y-2">
+              <h2 className="text-lg font-black">Vault data is unreadable</h2>
+              <p className="text-xs text-gray-500 dark:text-zinc-400 leading-relaxed">
+                A vault exists on this device but it could not be read or parsed, so it was
+                NOT treated as a new vault and nothing has been overwritten. You can download
+                the raw stored data (still encrypted) for safekeeping. Erasing is permanent
+                and only makes sense if you have a separate backup.
+              </p>
+            </div>
+            <div className="w-full space-y-3">
+              <button
+                type="button"
+                onClick={handleExportCorruptVault}
+                className="w-full py-3 bg-gray-900 dark:bg-white text-white dark:text-gray-900 rounded-xl text-xs font-black cursor-pointer"
+              >
+                Download raw vault data
+              </button>
+              {confirmEraseCorrupt ? (
+                <button
+                  type="button"
+                  onClick={handleEraseCorruptVault}
+                  className="w-full py-3 bg-rose-600 text-white rounded-xl text-xs font-black cursor-pointer"
+                >
+                  Tap again to permanently erase and start over
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setConfirmEraseCorrupt(true)}
+                  className="w-full py-3 bg-white dark:bg-zinc-900 border border-rose-300 dark:border-rose-900 text-rose-600 rounded-xl text-xs font-black cursor-pointer"
+                >
+                  Erase vault and start over
+                </button>
+              )}
+            </div>
           </motion.div>
         ) : isSetupState ? (
           /* CASE A: FIRST-TIME ZERO-KNOWLEDGE VAULT SETUP */

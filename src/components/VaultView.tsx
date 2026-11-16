@@ -13,6 +13,7 @@ import {
 import { VaultEntry, EntryType, CustomField } from '../types';
 import { LocaleStrings } from '../locales';
 import { calculateEntropy, getPasswordStrength, getSafeExternalUrl } from '../utils';
+import { copyTextWithAutoClear } from '../services/clipboard';
 
 interface VaultViewProps {
   entries: VaultEntry[];
@@ -118,15 +119,14 @@ export default function VaultView({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isFormOpen]);
 
-  // Real Clipboard Auto-Clear Countdown
+  // Visual countdown only. The actual clipboard clear is owned by the
+  // module-level clipboard service (services/clipboard.ts), so it still
+  // happens if this view unmounts before the countdown ends (P-04).
   useEffect(() => {
     if (clipboardTimer <= 0) return;
     const interval = setInterval(() => {
       setClipboardTimer(prev => {
         if (prev <= 1) {
-          if (clipboardClearSeconds > 0) {
-            navigator.clipboard?.writeText('').catch(() => {});
-          }
           setCopiedField(null);
           return 0;
         }
@@ -134,17 +134,28 @@ export default function VaultView({
       });
     }, 1000);
     return () => clearInterval(interval);
-  }, [clipboardTimer, clipboardClearSeconds]);
+  }, [clipboardTimer]);
+
+  const [copyFailedField, setCopyFailedField] = useState<string | null>(null);
 
   const triggerClipboardCopy = (text: string, label: string) => {
-    navigator.clipboard?.writeText(text).catch(() => {});
-    setCopiedField(label);
-    if (clipboardClearSeconds > 0) {
-      setClipboardTimer(clipboardClearSeconds);
-    } else {
-      setClipboardTimer(0);
-      setTimeout(() => setCopiedField(prev => (prev === label ? null : prev)), 2000);
-    }
+    void copyTextWithAutoClear(text, clipboardClearSeconds).then(ok => {
+      if (ok) {
+        setCopyFailedField(null);
+        setCopiedField(label);
+        if (clipboardClearSeconds > 0) {
+          setClipboardTimer(clipboardClearSeconds);
+        } else {
+          setClipboardTimer(0);
+          setTimeout(() => setCopiedField(prev => (prev === label ? null : prev)), 2000);
+        }
+      } else {
+        // Honest failure state instead of a false "Copied" (P-04).
+        setCopiedField(null);
+        setCopyFailedField(label);
+        setTimeout(() => setCopyFailedField(prev => (prev === label ? null : prev)), 3000);
+      }
+    });
   };
 
   const entryTypes: { id: EntryType; label: string; icon: React.ReactNode }[] = [
@@ -768,6 +779,11 @@ export default function VaultView({
             {copiedField && clipboardClearSeconds > 0 && clipboardTimer > 0 && (
               <div className="p-2 bg-indigo-500 text-white rounded-lg text-center text-[10px] font-mono font-bold mt-4">
                 Clipboard auto-clear in {clipboardTimer}s
+              </div>
+            )}
+            {copyFailedField && (
+              <div className="p-2 bg-rose-500 text-white rounded-lg text-center text-[10px] font-mono font-bold mt-4">
+                Copy failed — clipboard unavailable
               </div>
             )}
           </div>

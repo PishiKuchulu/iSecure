@@ -137,6 +137,36 @@ test('utils: auditVault ignores Secure Notes and empty passwords, detects weak/r
   assert.equal(result.score, 55);
 });
 
+test('utils: auditVault treats Object.prototype member names as ordinary passwords (P-01 regression)', () => {
+  // Before the fix these threw "passwordCounts[pwd].push is not a function"
+  // because a plain {} inherits constructor/toString/__proto__ properties.
+  for (const special of ['__proto__', 'constructor', 'toString', 'valueOf', 'hasOwnProperty']) {
+    const single = auditVault([makeEntry({ id: `special-${special}`, password: special })]);
+    assert.ok(Array.isArray(single.reusedIds));
+  }
+  const dupA = makeEntry({ id: 'dup-a', password: 'constructor' });
+  const dupB = makeEntry({ id: 'dup-b', password: 'constructor' });
+  const result = auditVault([dupA, dupB]);
+  assert.deepEqual(result.reusedIds.sort(), ['dup-a', 'dup-b']);
+});
+
+test('crypto: isValidEncryptedEnvelope rejects non-integer or absurd PBKDF2 iteration counts', () => {
+  const base = {
+    version: 2,
+    kdf: 'PBKDF2-SHA256',
+    salt: 'c2FsdA==',
+    iv: 'aXY=',
+    ciphertext: 'Y2lwaGVy',
+  };
+  assert.equal(isValidEncryptedEnvelope({ ...base, iterations: 600_000 }), true);
+  assert.equal(isValidEncryptedEnvelope({ ...base, iterations: 10_000_000 }), true);
+  assert.equal(isValidEncryptedEnvelope({ ...base, iterations: 1000.5 }), false);
+  assert.equal(isValidEncryptedEnvelope({ ...base, iterations: 1e100 }), false);
+  assert.equal(isValidEncryptedEnvelope({ ...base, iterations: Infinity }), false);
+  assert.equal(isValidEncryptedEnvelope({ ...base, iterations: 10_000_001 }), false);
+  assert.equal(isValidEncryptedEnvelope({ ...base, iterations: 999 }), false);
+});
+
 test('utils: getSafeExternalUrl restricts dangerous schemes', () => {
   assert.equal(getSafeExternalUrl('https://example.com/login'), 'https://example.com/login');
   assert.equal(getSafeExternalUrl('http://localhost:3000'), 'http://localhost:3000/');

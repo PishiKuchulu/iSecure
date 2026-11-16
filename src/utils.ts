@@ -101,19 +101,24 @@ export function auditVault(entries: VaultEntry[]) {
     }
   });
 
-  // Find reused passwords
-  const passwordCounts: Record<string, string[]> = {};
+  // Find reused passwords. A Map is used (not a plain object) so that
+  // passwords colliding with Object.prototype member names such as
+  // "__proto__", "constructor" or "toString" are treated as ordinary
+  // values instead of crashing on inherited properties.
+  const passwordCounts = new Map<string, string[]>();
   activeEntries.forEach(entry => {
     const pwd = entry.password || '';
     if (pwd && entry.entryType !== 'note') {
-      if (!passwordCounts[pwd]) {
-        passwordCounts[pwd] = [];
+      const ids = passwordCounts.get(pwd);
+      if (ids) {
+        ids.push(entry.id);
+      } else {
+        passwordCounts.set(pwd, [entry.id]);
       }
-      passwordCounts[pwd].push(entry.id);
     }
   });
 
-  Object.values(passwordCounts).forEach(ids => {
+  passwordCounts.forEach(ids => {
     if (ids.length > 1) {
       reusedIds.push(...ids);
     }

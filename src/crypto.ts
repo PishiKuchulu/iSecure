@@ -155,7 +155,12 @@ export function isValidEncryptedEnvelope(value: unknown): value is EncryptedVaul
     v.version === 2 &&
     v.kdf === 'PBKDF2-SHA256' &&
     typeof v.iterations === 'number' &&
+    Number.isInteger(v.iterations) &&
     v.iterations >= 1000 &&
+    // Upper bound: a crafted envelope must not be able to make PBKDF2
+    // hang effectively forever at unlock time (legitimate vaults use
+    // 600,000; 10,000,000 leaves generous headroom).
+    v.iterations <= 10_000_000 &&
     typeof v.salt === 'string' &&
     v.salt.length > 0 &&
     typeof v.iv === 'string' &&

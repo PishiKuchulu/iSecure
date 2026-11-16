@@ -47,7 +47,7 @@ snapshot and no longer applies).
   1.0.0, minSdk 23, targetSdk 35, label `iSecure`, only the INTERNET
   permission; both Capacitor plugins (App, Filesystem) registered;
   web assets bundled under `assets/public`.
-- APK SHA-256: `c85de7cebe6aec040081db92412c650456bfbfa539517c2e6b0bce2a5c34b6fc`
+- APK SHA-256: `29dbd4bffc299918a33828c0a42f74b6901861e18f8c74dcfd09fe687c9739c2`
   (debug build, ~4.3 MB, signed with the standard Android debug key).
 
 ## How to rebuild
@@ -101,3 +101,40 @@ Drive backups remain readable.
 Repository: https://github.com/PishiKuchulu/iSecure (created empty and
 private). This source is committed in the local git repository only —
 **not pushed** — until the owner says otherwise.
+
+## Forensic-audit fixes (2026-11-16)
+
+Fixes for the verified preliminary findings P-01..P-04 of the external
+forensic audit checkpoint (audited commit 973d421), plus its validator
+probe. All changes verified: unit tests 10/10 (2 new regression tests),
+`tsc --noEmit` clean, Vite build + Capacitor sync OK, `assembleDebug`
+BUILD SUCCESSFUL.
+
+- **P-01** — `auditVault` (src/utils.ts) counted reused passwords in a
+  plain `{}` keyed by password, so a password equal to an
+  Object.prototype member name (`__proto__`, `constructor`, `toString`,
+  ...) crashed Dashboard/Security rendering with a TypeError. Now uses a
+  `Map`. Regression test covers the inherited-name passwords.
+- **Validator** — `isValidEncryptedEnvelope` (src/crypto.ts) accepted any
+  PBKDF2 iteration count >= 1000, including 1e100 / Infinity / 1000.5, so
+  a crafted envelope could hang key derivation at unlock. Now requires an
+  integer in [1000, 10,000,000]. Regression test included.
+- **P-02** — persistence failures were invisible: CRUD handlers discarded
+  the save promise and the stored-envelope ref was updated before the
+  write landed. The ref is now updated only after a successful write, and
+  a failed save raises a dismissible red banner ("latest changes are NOT
+  stored yet"); the next successful save clears it.
+- **P-03** — a corrupt/unreadable vault was indistinguishable from "no
+  vault" and led to setup, which overwrote the stored bytes.
+  `loadVault()` now returns ok / empty / corrupt; the corrupt state shows
+  a recovery screen offering a raw (still encrypted) download of the
+  stored bytes, or a two-step confirmed erase before setup is offered.
+  Web load path verified dynamically for all three states.
+- **P-04** — clipboard auto-clear lived in component timers that died on
+  unmount, cleared unconditionally (clobbering newer clipboard content),
+  and copy errors were swallowed while the UI showed "Copied". New
+  module-level `src/services/clipboard.ts`: the clear timer survives
+  unmount, clearing only happens when the clipboard still holds the value
+  this app copied (when readable), copy success/failure is reported
+  honestly in both Vault and Generator views, and locking the vault also
+  clears an app-copied secret.
