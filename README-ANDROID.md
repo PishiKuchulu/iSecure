@@ -180,3 +180,20 @@ the UI offers Install again. Pure logic lives in
 src/services/updateLogic.ts (unit-tested); version is now derived from
 build.gradle by the workflow (tag v<versionName>, asset
 iSecure-<versionName>-release.apk + .sha256).
+
+## Native Google Drive sign-in (v1.0.2, 2026-11-17)
+
+The Firebase `signInWithPopup` flow cannot run inside the Android
+WebView: its auth handler escapes to Chrome and dies with "The requested
+action is invalid" (hit on-device by Farzad on v1.0.1). On native,
+`signInWithGoogleDrive()` now uses the local `GoogleDriveAuth` Capacitor
+plugin (Google Identity Authorization API, play-services-auth 21.3.0) to
+get an OAuth access token for the drive.file scope directly; the profile
+comes from the userinfo endpoint; sign-out revokes the token. The Drive
+REST layer and the in-memory-only token rule are unchanged, and the web
+build keeps the popup flow. Prerequisite (done 2026-11-17): the Android
+app is registered in the Firebase project (com.isecure.app, app id
+1:430894955554:android:4ccf03f16b556b0948de7b) with the release cert
+SHA-1 fingerprint, which creates the Android OAuth client the
+Authorization API checks. Session-only by design: every app start begins
+signed out until the user taps sign-in (same as web after a reload).

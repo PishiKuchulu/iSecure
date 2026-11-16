@@ -27,9 +27,9 @@ import {
   generateSalt,
   isValidEncryptedEnvelope,
 } from './crypto';
-import type { User } from 'firebase/auth';
 import {
   DriveBackupFile,
+  DriveUserProfile,
   clearCachedDriveAccessToken,
   deleteDriveBackup,
   downloadDriveBackupEnvelope,
@@ -199,7 +199,7 @@ export default function App() {
   });
 
   // Volatile Google Drive Auth & Backup state (access token stored strictly in memory)
-  const [driveUser, setDriveUser] = useState<User | null>(null);
+  const [driveUser, setDriveUser] = useState<DriveUserProfile | null>(null);
   const [driveAccessToken, setDriveAccessToken] = useState<string | null>(null);
   const [driveBackups, setDriveBackups] = useState<DriveBackupFile[]>([]);
   const [isDriveBusy, setIsDriveBusy] = useState(false);

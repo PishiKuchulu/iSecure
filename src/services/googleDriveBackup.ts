@@ -14,6 +14,8 @@ import {
 } from 'firebase/auth';
 import firebaseConfig from '../../firebase-applet-config.json';
 import { EncryptedVaultEnvelope, isValidEncryptedEnvelope } from '../crypto';
+import { Capacitor } from '@capacitor/core';
+import GoogleDriveAuth from './googleDriveAuth';
 
 export const SCOPES = ['https://www.googleapis.com/auth/drive.file'];
 
@@ -27,6 +29,32 @@ export interface DriveBackupFile {
   modifiedTime?: string;
 }
 
+/** Platform-neutral signed-in profile (Firebase User on web, Google
+ *  userinfo on native) — the UI only ever needs email + display name. */
+export interface DriveUserProfile {
+  email: string | null;
+  displayName: string | null;
+}
+
+function toProfile(user: User): DriveUserProfile {
+  return { email: user.email ?? null, displayName: user.displayName ?? null };
+}
+
+async function fetchGoogleProfile(
+  accessToken: string,
+): Promise<DriveUserProfile> {
+  try {
+    const res = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    if (!res.ok) return { email: null, displayName: null };
+    const j = (await res.json()) as { email?: string; name?: string };
+    return { email: j.email ?? null, displayName: j.name ?? null };
+  } catch {
+    return { email: null, displayName: null };
+  }
+}
+
 const app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
 const auth = getAuth(app);
 
@@ -38,13 +66,20 @@ let cachedAccessToken: string | null = null;
 let isSigningIn = false;
 
 export function initDriveAuth(
-  onAuthSuccess: (user: User, token: string) => void,
+  onAuthSuccess: (user: DriveUserProfile, token: string) => void,
   onAuthFailure: () => void
 ) {
+  if (Capacitor.isNativePlatform()) {
+    // Native sign-in is session-only by design (the access token lives
+    // strictly in memory): every app start begins signed out until the
+    // user taps sign-in. There is no persistent auth listener on native.
+    onAuthFailure();
+    return () => {};
+  }
   return onAuthStateChanged(auth, (user: User | null) => {
     if (user) {
       if (cachedAccessToken) {
-        onAuthSuccess(user, cachedAccessToken);
+        onAuthSuccess(toProfile(user), cachedAccessToken);
       } else if (!isSigningIn) {
         cachedAccessToken = null;
         onAuthFailure();
@@ -56,7 +91,19 @@ export function initDriveAuth(
   });
 }
 
-export async function signInWithGoogleDrive(): Promise<{ user: User; accessToken: string }> {
+export async function signInWithGoogleDrive(): Promise<{ user: DriveUserProfile; accessToken: string }> {
+  if (Capacitor.isNativePlatform()) {
+    // Native path: Google Identity Authorization API via the local
+    // GoogleDriveAuth plugin (the Firebase popup flow cannot run inside
+    // a WebView — its handler escapes to Chrome and is rejected there).
+    const { accessToken } = await GoogleDriveAuth.signIn();
+    if (!accessToken) {
+      throw new Error('Could not obtain a Google Drive access token from sign-in.');
+    }
+    cachedAccessToken = accessToken;
+    const user = await fetchGoogleProfile(accessToken);
+    return { user, accessToken };
+  }
   isSigningIn = true;
   try {
     const result = await signInWithPopup(auth, provider);
@@ -65,14 +112,29 @@ export async function signInWithGoogleDrive(): Promise<{ user: User; accessToken
       throw new Error('Could not obtain a Google Drive access token from sign-in.');
     }
     cachedAccessToken = credential.accessToken;
-    return { user: result.user, accessToken: cachedAccessToken };
+    return { user: toProfile(result.user), accessToken: cachedAccessToken };
   } finally {
     isSigningIn = false;
   }
 }
 
 export async function signOutGoogleDrive(): Promise<void> {
+  const token = cachedAccessToken;
   cachedAccessToken = null;
+  if (Capacitor.isNativePlatform()) {
+    if (token) {
+      try {
+        await fetch('https://oauth2.googleapis.com/revoke', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: `token=${encodeURIComponent(token)}`,
+        });
+      } catch {
+        // Best effort only — the in-memory token is already dropped.
+      }
+    }
+    return;
+  }
   await signOut(auth);
 }
 

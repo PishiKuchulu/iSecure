@@ -10,6 +10,8 @@ public class MainActivity extends BridgeActivity {
     public void onCreate(Bundle savedInstanceState) {
         // Local plugin backing the in-app updater (signer check + install).
         registerPlugin(ApkInstallerPlugin.class);
+        // Local plugin for native Google Drive authorization.
+        registerPlugin(GoogleDriveAuthPlugin.class);
         super.onCreate(savedInstanceState);
         // iSecure is a password manager: block screenshots, screen
         // recording and recent-apps thumbnails of vault content at OS level.
