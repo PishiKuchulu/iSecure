@@ -56,19 +56,24 @@ jobs:
 
       - name: Verify signature and stage APK
         run: |
+          VERSION=$(grep -oP 'versionName "\K[^"]+' android/app/build.gradle)
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
           APKSIGNER=$(find "$ANDROID_HOME/build-tools" -name apksigner | sort | tail -1)
           "$APKSIGNER" verify --print-certs android/app/build/outputs/apk/release/app-release.apk | grep "SHA-256 digest"
-          cp android/app/build/outputs/apk/release/app-release.apk iSecure-1.0.0-release.apk
-          sha256sum iSecure-1.0.0-release.apk
+          cp android/app/build/outputs/apk/release/app-release.apk "iSecure-$VERSION-release.apk"
+          sha256sum "iSecure-$VERSION-release.apk" > "iSecure-$VERSION-release.apk.sha256"
+          cat "iSecure-$VERSION-release.apk.sha256"
 
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v1.0.0
-          name: iSecure v1.0.0
-          files: iSecure-1.0.0-release.apk
+          tag_name: v${{ env.VERSION }}
+          name: iSecure v${{ env.VERSION }}
+          files: |
+            iSecure-${{ env.VERSION }}-release.apk
+            iSecure-${{ env.VERSION }}-release.apk.sha256
           body: |
-            First signed release of iSecure — zero-knowledge password manager
+            Signed release of iSecure — zero-knowledge password manager
             (Capacitor Android, com.isecure.app, minSdk 23, targetSdk 35).
 
             Signed with the shared Anvex/MarbleMD release key,
