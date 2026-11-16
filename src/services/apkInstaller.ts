@@ -8,7 +8,13 @@
  * updater UI is hidden there anyway.
  */
 
-import { registerPlugin } from '@capacitor/core';
+import { registerPlugin, type PluginListenerHandle } from '@capacitor/core';
+
+export interface DownloadProgress {
+  url: string;
+  bytes: number;
+  contentLength: number;
+}
 
 export interface ApkInstallerPlugin {
   /** Opens the system package installer for the APK at `path`.
@@ -18,6 +24,13 @@ export interface ApkInstallerPlugin {
   /** True when the APK at `path` is signed with the same certificate as
    *  the currently installed app (fail-closed update verification). */
   verifySigner(options: { path: string }): Promise<{ matches: boolean }>;
+  /** Native HTTP download into the app cache dir (follows redirects
+   *  manually; not bound by WebView CORS). Emits 'downloadProgress'. */
+  download(options: { url: string; fileName: string }): Promise<{ path: string }>;
+  addListener(
+    eventName: 'downloadProgress',
+    listener: (progress: DownloadProgress) => void,
+  ): Promise<PluginListenerHandle>;
 }
 
 const ApkInstaller = registerPlugin<ApkInstallerPlugin>('ApkInstaller');

@@ -7,7 +7,8 @@ import React, { useState, useEffect, useRef, useCallback, lazy, Suspense } from 
 import { motion, AnimatePresence } from 'motion/react';
 import {
   Key, Shield, AlertTriangle, Settings, Eye, EyeOff,
-  LogOut, Layers, LayoutDashboard, Database, Lock, RotateCcw, ArrowUpCircle
+  LogOut, Layers, LayoutDashboard, Database, Lock, RotateCcw, ArrowUpCircle,
+  Fingerprint
 } from 'lucide-react';
 import { VaultEntry, UserSettings } from './types';
 import { localesMap } from './locales';
@@ -53,6 +54,13 @@ import {
   isUpdaterSupported,
   type UpdateInfo,
 } from './services/updater';
+import {
+  biometricAvailable as nativeBiometricAvailable,
+  biometricStored as nativeBiometricStored,
+  clearBiometricSecret,
+  retrieveBiometricSecret,
+  storeBiometricSecret,
+} from './services/biometricUnlock';
 import { App as CapacitorApp } from '@capacitor/app';
 
 const DashboardView = lazy(() => import('./components/DashboardView'));
@@ -183,6 +191,27 @@ export default function App() {
   const [decryptError, setDecryptError] = useState('');
   const [failedAttempts, setFailedAttempts] = useState(0);
   const [showResetModal, setShowResetModal] = useState(false);
+
+  // Fingerprint unlock (native only): device support + whether a master
+  // secret is stored in the biometric Keystore store.
+  const [biometricAvailable, setBiometricAvailable] = useState(false);
+  const [biometricEnabled, setBiometricEnabled] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      const [available, stored] = await Promise.all([
+        nativeBiometricAvailable(),
+        nativeBiometricStored(),
+      ]);
+      if (!cancelled) {
+        setBiometricAvailable(available);
+        setBiometricEnabled(available && stored);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // Decrypted volatile vault state (cleared when locked)
   const [entries, setEntries] = useState<VaultEntry[]>([]);
@@ -490,23 +519,25 @@ export default function App() {
     }
   };
 
-  // Unlock existing encrypted vault using Web Crypto AES-256-GCM decryption
-  const handleUnlockVault = async (e?: React.FormEvent) => {
-    if (e) e.preventDefault();
-    if (isDeriving || !masterPasswordInput) return;
+  // Unlock existing encrypted vault using Web Crypto AES-256-GCM
+  // decryption. Returns true on success. Shared by the password form and
+  // by the fingerprint path, which retrieves the same master secret from
+  // the biometric Keystore store.
+  const attemptUnlock = async (secret: string): Promise<boolean> => {
+    if (isDeriving || !secret) return false;
 
     const envelope = storedEnvelopeRef.current ?? (await loadVaultEnvelope());
     if (envelope) storedEnvelopeRef.current = envelope;
     if (!envelope) {
       setIsSetupState(true);
       setDecryptError('');
-      return;
+      return false;
     }
 
     setIsDeriving(true);
     setDecryptError('');
     try {
-      const { payload, key } = await decryptVaultEnvelope(envelope, masterPasswordInput);
+      const { payload, key } = await decryptVaultEnvelope(envelope, secret);
 
       sessionKeyRef.current = key;
       sessionSaltRef.current = envelope.salt;
@@ -528,18 +559,92 @@ export default function App() {
       if (purgedEntries.length !== payload.entries.length) {
         await persistVaultState(purgedEntries, payload.customCategories, nextBackupTime || null);
       }
+      return true;
     } catch {
       setFailedAttempts(prev => prev + 1);
       setDecryptError(strings.wrongPassword);
+      return false;
     } finally {
       setIsDeriving(false);
     }
   };
 
+  const handleUnlockVault = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    await attemptUnlock(masterPasswordInput);
+  };
+
+  const biometricPromptStrings = {
+    title: strings.biometricPromptTitle,
+    subtitle: strings.biometricPromptSubtitle,
+    cancelLabel: strings.cancel,
+  };
+
+  // Fingerprint unlock: the system prompt releases the stored master
+  // secret, which then goes through the exact same decryption path as
+  // typing it.
+  const handleBiometricUnlock = async () => {
+    if (isDeriving) return;
+    try {
+      const secret = await retrieveBiometricSecret(biometricPromptStrings);
+      const ok = await attemptUnlock(secret);
+      if (!ok) {
+        // The stored secret no longer opens this vault (e.g. the vault was
+        // reset and recreated with a different master secret): drop it so
+        // the user is not stuck in a failing fingerprint loop.
+        await clearBiometricSecret();
+        setBiometricEnabled(false);
+      }
+    } catch {
+      // Cancelled or unavailable — the password form stays as-is.
+    }
+  };
+
+  const handleEnableBiometric = async (candidate: string) => {
+    const envelope = storedEnvelopeRef.current ?? (await loadVaultEnvelope());
+    if (!envelope) throw new Error(strings.wrongPassword);
+    // Verify the typed secret really opens this vault before storing it.
+    try {
+      await decryptVaultEnvelope(envelope, candidate);
+    } catch {
+      throw new Error(strings.wrongPassword);
+    }
+    await storeBiometricSecret(candidate, biometricPromptStrings);
+    setBiometricEnabled(true);
+  };
+
+  const handleDisableBiometric = async () => {
+    await clearBiometricSecret();
+    setBiometricEnabled(false);
+  };
+
+  // Offer the fingerprint prompt once per lock episode, so returning to
+  // the app does not mean typing the master secret every time.
+  const biometricPromptedRef = useRef(false);
+  useEffect(() => {
+    if (isUnlocked) {
+      biometricPromptedRef.current = false;
+      return;
+    }
+    if (
+      biometricAvailable &&
+      biometricEnabled &&
+      !isSetupState &&
+      !isStorageCorrupt &&
+      !biometricPromptedRef.current
+    ) {
+      biometricPromptedRef.current = true;
+      void handleBiometricUnlock();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isUnlocked, biometricAvailable, biometricEnabled, isSetupState, isStorageCorrupt]);
+
   // Reset local vault (wipes encrypted storage after explicit modal confirmation)
   const handleConfirmResetVault = async () => {
     storedEnvelopeRef.current = null;
     await deleteVaultEnvelope();
+    await clearBiometricSecret();
+    setBiometricEnabled(false);
     LEGACY_KEYS.forEach(k => localStorage.removeItem(k));
     handleLockVault();
     setFailedAttempts(0);
@@ -566,6 +671,8 @@ export default function App() {
   // P-03 recovery: deliberate, confirmed erase of the unreadable vault.
   const handleEraseCorruptVault = async () => {
     await deleteVaultEnvelope();
+    await clearBiometricSecret();
+    setBiometricEnabled(false);
     storedEnvelopeRef.current = null;
     setIsStorageCorrupt(false);
     setConfirmEraseCorrupt(false);
@@ -1191,6 +1298,17 @@ export default function App() {
               </button>
             </form>
 
+            {biometricAvailable && biometricEnabled && (
+              <button
+                type="button"
+                onClick={() => void handleBiometricUnlock()}
+                className="w-full mt-1 py-3 bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 text-gray-900 dark:text-zinc-100 text-xs font-bold rounded-xl flex items-center justify-center gap-2 transition cursor-pointer"
+              >
+                <Fingerprint className="w-4 h-4" />
+                {strings.biometricUnlockBtn}
+              </button>
+            )}
+
             <div className="text-[10px] text-gray-400 space-y-2">
               <p>{strings.appLockedDesc}</p>
               <button
@@ -1431,6 +1549,10 @@ export default function App() {
                         onDriveOverwriteBackup={(fileId, fileName) => handleBackupToDrive(fileId, fileName)}
                         onDriveRestoreBackup={handleRestoreFromDrive}
                         onDriveDeleteBackup={handleDeleteDriveBackup}
+                        biometricAvailable={biometricAvailable}
+                        biometricEnabled={biometricEnabled}
+                        onEnableBiometric={handleEnableBiometric}
+                        onDisableBiometric={handleDisableBiometric}
                       />
                     )}
 

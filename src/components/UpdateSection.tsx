@@ -41,7 +41,15 @@ function formatSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
 }
 
-export default function UpdateSection({ strings }: { strings: LocaleStrings }) {
+export default function UpdateSection({
+  strings,
+  bare = false,
+}: {
+  strings: LocaleStrings;
+  /** Render without the card chrome and header (used inside the
+   *  Settings accordion, which provides both). */
+  bare?: boolean;
+}) {
   const supported = isUpdaterSupported();
   const [current, setCurrent] = useState<string>('');
   const [phase, setPhase] = useState<Phase>({ name: 'idle' });
@@ -104,14 +112,8 @@ export default function UpdateSection({ strings }: { strings: LocaleStrings }) {
   const busy =
     phase.name === 'checking' || phase.name === 'downloading';
 
-  return (
-    <div className="p-5 bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 rounded-2xl space-y-4">
-      <div className="flex items-center gap-2">
-        <ArrowUpCircle className="w-4 h-4 text-emerald-500" />
-        <h4 className="text-xs font-bold text-gray-900 dark:text-zinc-100">
-          {strings.updatesTitle}
-        </h4>
-      </div>
+  const body = (
+    <>
       <p className="text-[11px] text-gray-500 dark:text-zinc-400 leading-relaxed">
         {strings.updatesDesc}
       </p>
@@ -234,6 +236,19 @@ export default function UpdateSection({ strings }: { strings: LocaleStrings }) {
           ? strings.checkingUpdates
           : strings.checkForUpdates}
       </button>
+    </>
+  );
+
+  if (bare) return <div className="space-y-4">{body}</div>;
+  return (
+    <div className="p-5 bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 rounded-2xl space-y-4">
+      <div className="flex items-center gap-2">
+        <ArrowUpCircle className="w-4 h-4 text-emerald-500" />
+        <h4 className="text-xs font-bold text-gray-900 dark:text-zinc-100">
+          {strings.updatesTitle}
+        </h4>
+      </div>
+      {body}
     </div>
   );
 }

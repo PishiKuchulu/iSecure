@@ -17,6 +17,11 @@ import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.CapacitorPlugin;
 
 import java.io.File;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.net.HttpURLConnection;
+import java.net.URL;
 import java.util.Arrays;
 
 /**
@@ -74,6 +79,89 @@ public class ApkInstallerPlugin extends Plugin {
         } catch (Exception e) {
             call.reject("Signer verification failed: " + e.getMessage());
         }
+    }
+
+    private void notifyProgress(String url, long bytes, long total) {
+        JSObject data = new JSObject();
+        data.put("url", url);
+        data.put("bytes", bytes);
+        data.put("contentLength", total);
+        notifyListeners("downloadProgress", data);
+    }
+
+    /**
+     * Download a file into the app cache directory with plain
+     * HttpURLConnection, following redirects manually. Native HTTP is not
+     * subject to WebView CORS rules, so hosts that redirect to a CDN
+     * without CORS headers (GitHub release assets) work here even though
+     * a WebView fetch() to the same URL fails. Emits "downloadProgress"
+     * events roughly every 256 KB.
+     */
+    @PluginMethod
+    public void download(PluginCall call) {
+        String url = call.getString("url");
+        String fileName = call.getString("fileName");
+        if (url == null || fileName == null) {
+            call.reject("url and fileName are required");
+            return;
+        }
+        File dest = new File(getContext().getCacheDir(), fileName);
+        new Thread(() -> {
+            HttpURLConnection conn = null;
+            try {
+                String current = url;
+                for (int hop = 0; hop <= 5; hop++) {
+                    URL u = new URL(current);
+                    conn = (HttpURLConnection) u.openConnection();
+                    conn.setInstanceFollowRedirects(false);
+                    conn.setConnectTimeout(30000);
+                    conn.setReadTimeout(60000);
+                    conn.setRequestProperty("User-Agent", "iSecure-Updater");
+                    int code = conn.getResponseCode();
+                    if (code >= 300 && code < 400) {
+                        String loc = conn.getHeaderField("Location");
+                        conn.disconnect();
+                        conn = null;
+                        if (loc == null) throw new IOException("Redirect without Location");
+                        current = new URL(u, loc).toString();
+                        continue;
+                    }
+                    if (code != HttpURLConnection.HTTP_OK) {
+                        throw new IOException("HTTP " + code);
+                    }
+                    long total = conn.getContentLengthLong();
+                    try (InputStream in = conn.getInputStream();
+                         FileOutputStream out = new FileOutputStream(dest)) {
+                        byte[] buf = new byte[64 * 1024];
+                        long done = 0;
+                        long lastNotify = 0;
+                        int n;
+                        while ((n = in.read(buf)) != -1) {
+                            out.write(buf, 0, n);
+                            done += n;
+                            if (done - lastNotify >= 256 * 1024) {
+                                lastNotify = done;
+                                notifyProgress(url, done, total);
+                            }
+                        }
+                    }
+                    notifyProgress(url, dest.length(), total > 0 ? total : dest.length());
+                    JSObject ret = new JSObject();
+                    ret.put("path", dest.getAbsolutePath());
+                    call.resolve(ret);
+                    return;
+                }
+                throw new IOException("Too many redirects");
+            } catch (Exception e) {
+                if (dest.exists()) {
+                    // Never leave a partial download behind.
+                    dest.delete();
+                }
+                call.reject("Download failed: " + e.getMessage());
+            } finally {
+                if (conn != null) conn.disconnect();
+            }
+        }).start();
     }
 
     @PluginMethod

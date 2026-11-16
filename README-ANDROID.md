@@ -197,3 +197,36 @@ app is registered in the Firebase project (com.isecure.app, app id
 SHA-1 fingerprint, which creates the Android OAuth client the
 Authorization API checks. Session-only by design: every app start begins
 signed out until the user taps sign-in (same as web after a reload).
+
+## Update feed, fingerprint unlock, accordion settings (v1.0.3, 2026-11-17)
+
+Three changes, two of them driven by on-device failures of v1.0.1/1.0.2:
+
+- **Updater source moved to a Cloudflare feed.** On-device, the update
+  check worked but tapping Update failed with "Failed to fetch": the
+  download path first fetched the release's .sha256 sidecar from the
+  WebView, and GitHub asset URLs 302-redirect to
+  release-assets.githubusercontent.com, whose response has no CORS
+  headers, so the WebView killed the fetch (the native download never
+  ran). The `isecure-update` Worker
+  (https://isecure-update.farzad-sholeh.workers.dev) now resolves the
+  newest GitHub release server-side: `/update.json` returns version,
+  size and the sidecar's SHA-256 (validated strictly by
+  `parseUpdateFeed`), and `/dl/<apk>` streams the APK as a direct 200.
+  The in-app download itself also moved into native code
+  (`ApkInstaller.download`, manual redirect following, progress events),
+  so no part of the flow depends on WebView fetch semantics anymore.
+  SHA-256 verification and the same-signer check are unchanged.
+- **Fingerprint unlock.** New local `BiometricUnlock` plugin
+  (androidx.biometric): the master secret is stored encrypted under an
+  Android Keystore AES-256-GCM key bound to BIOMETRIC_STRONG with
+  per-use authentication (CryptoObject), so the plaintext is released
+  only inside a successful biometric prompt. Enabling it (Settings →
+  App Timeout & Protections) requires typing the master secret once,
+  which is verified against the vault before storing. The lock screen
+  offers the prompt automatically once per lock episode plus a manual
+  button; a stored secret that no longer opens the vault is wiped, and
+  vault reset/erase clears it too. The secret never leaves the device.
+- **Settings is an accordion.** Every settings card is now a collapsible
+  section (theme open by default); the App Updates card renders bare
+  inside its section. All controls keep their previous wiring.

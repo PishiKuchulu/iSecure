@@ -3,10 +3,17 @@
  * SPDX-License-Identifier: Apache-2.0
  *
  * In-app updater for the Android (Capacitor) build, modelled on Anvex:
- * check the GitHub releases list → download the APK inside the app →
- * MANDATORY SHA-256 check against the release's .sha256 sidecar →
- * same-signer certificate check → hand off to the system installer.
- * Web builds have no updater (the section is hidden there).
+ * check for a newer release → download the APK inside the app →
+ * MANDATORY SHA-256 check → same-signer certificate check → hand off to
+ * the system installer. Web builds have no updater (hidden there).
+ *
+ * Since 1.0.3 the source is the iSecure update feed (a Cloudflare Worker
+ * that resolves GitHub releases server-side), not the GitHub API: from
+ * the phone, api.github.com proved unreliable and WebView fetches of
+ * release-asset URLs die on the 302 redirect to a CDN response without
+ * CORS headers (the "Failed to fetch" failure). The APK download itself
+ * runs in native code (ApkInstaller.download), which is not bound by
+ * WebView CORS at all.
  */
 
 import { Capacitor } from '@capacitor/core';
@@ -14,14 +21,12 @@ import { App } from '@capacitor/app';
 import { Filesystem, Directory } from '@capacitor/filesystem';
 import ApkInstaller from './apkInstaller';
 import {
-  parseLatestRelease,
-  parseSha256Sidecar,
+  UPDATE_FEED_ORIGIN,
+  parseUpdateFeed,
   type UpdateInfo,
 } from './updateLogic';
 
 export type { UpdateInfo };
-
-export const UPDATE_REPO = 'PishiKuchulu/iSecure';
 
 export type CheckResult =
   | { kind: 'available'; info: UpdateInfo; current: string }
@@ -48,15 +53,12 @@ export async function checkForUpdate(force = false): Promise<CheckResult> {
     return cached.result;
   }
   const current = await getCurrentVersion();
-  const res = await fetch(
-    `https://api.github.com/repos/${UPDATE_REPO}/releases?per_page=10`,
-    { headers: { Accept: 'application/vnd.github+json' } },
-  );
+  const res = await fetch(`${UPDATE_FEED_ORIGIN}/update.json`);
   if (!res.ok) {
-    throw new Error(`Update check failed (GitHub API ${res.status}).`);
+    throw new Error(`Update check failed (feed ${res.status}).`);
   }
   const json: unknown = await res.json();
-  const info = parseLatestRelease(json, current, UPDATE_REPO);
+  const info = parseUpdateFeed(json, current);
   const result: CheckResult = info
     ? { kind: 'available', info, current }
     : { kind: 'up-to-date', current };
@@ -111,26 +113,23 @@ async function deleteCachedFile(fileName: string): Promise<void> {
 }
 
 /**
- * Download the update APK into the app cache, verify its SHA-256 against
- * the release sidecar (mandatory — a missing or mismatching checksum
- * aborts and deletes the file), then verify the APK is signed with the
- * same certificate as the installed app. Returns the absolute APK path.
+ * Download the update APK into the app cache with the native downloader,
+ * verify its SHA-256 against the digest from the update feed (mandatory —
+ * a missing or mismatching checksum aborts and deletes the file), then
+ * verify the APK is signed with the same certificate as the installed
+ * app. Returns the absolute APK path.
  */
 export async function downloadAndVerifyUpdate(
   info: UpdateInfo,
   onProgress?: (percent: number) => void,
 ): Promise<string> {
-  const shaRes = await fetch(info.sha256Url);
-  if (!shaRes.ok) {
-    throw new Error('Could not download the update checksum.');
-  }
-  const expected = parseSha256Sidecar(await shaRes.text());
-  if (!expected) {
+  const expected = (info.sha256 || '').toLowerCase();
+  if (!/^[0-9a-f]{64}$/.test(expected)) {
     throw new Error('Update checksum is missing — refusing to install.');
   }
 
   const fileName = `isecure-update-${info.version}.apk`;
-  const listener = await Filesystem.addListener('progress', (p) => {
+  const listener = await ApkInstaller.addListener('downloadProgress', (p) => {
     if (p.url === info.apkUrl && p.contentLength > 0 && onProgress) {
       onProgress(
         Math.min(100, Math.floor((p.bytes / p.contentLength) * 100)),
@@ -139,11 +138,9 @@ export async function downloadAndVerifyUpdate(
   });
   let apkPath: string;
   try {
-    const result = await Filesystem.downloadFile({
+    const result = await ApkInstaller.download({
       url: info.apkUrl,
-      path: fileName,
-      directory: Directory.Cache,
-      progress: true,
+      fileName,
     });
     if (!result.path) throw new Error('Update download failed.');
     apkPath = result.path;

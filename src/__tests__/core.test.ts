@@ -217,9 +217,11 @@ test('blueprints: SQL schema comments out ERD block cleanly', () => {
 });
 
 import {
+  UPDATE_FEED_ORIGIN,
   compareVersions,
   parseLatestRelease,
   parseSha256Sidecar,
+  parseUpdateFeed,
 } from '../services/updateLogic';
 
 test('updater: compareVersions orders dotted versions numerically', () => {
@@ -299,4 +301,47 @@ test('updater: parseSha256Sidecar extracts the digest', () => {
   assert.equal(parseSha256Sidecar('A'.repeat(64)), 'a'.repeat(64));
   assert.equal(parseSha256Sidecar('no hash here'), null);
   assert.equal(parseSha256Sidecar(''), null);
+});
+
+test('updater: parseUpdateFeed validates the Cloudflare feed manifest strictly', () => {
+  const sha = 'b'.repeat(64);
+  const feed = {
+    version: '1.0.3',
+    tag: 'v1.0.3',
+    apkName: 'iSecure-1.0.3-release.apk',
+    sizeBytes: 7126609,
+    sha256: sha,
+    downloadUrl: `${UPDATE_FEED_ORIGIN}/dl/iSecure-1.0.3-release.apk`,
+  };
+
+  const info = parseUpdateFeed(feed, '1.0.2');
+  assert.equal(info?.version, '1.0.3');
+  assert.equal(info?.sha256, sha);
+  assert.equal(info?.apkSize, 7126609);
+  assert.equal(info?.apkUrl, feed.downloadUrl);
+
+  // Not newer than the installed version.
+  assert.equal(parseUpdateFeed(feed, '1.0.3'), null);
+  assert.equal(parseUpdateFeed(feed, '1.1.0'), null);
+  // Missing or malformed checksum -> refused (checksum is mandatory).
+  assert.equal(parseUpdateFeed({ ...feed, sha256: '' }, '1.0.2'), null);
+  assert.equal(parseUpdateFeed({ ...feed, sha256: 'xyz' }, '1.0.2'), null);
+  // Download URL must stay under the feed origin's /dl/ prefix.
+  assert.equal(
+    parseUpdateFeed({ ...feed, downloadUrl: 'https://evil.example.com/a.apk' }, '1.0.2'),
+    null,
+  );
+  assert.equal(
+    parseUpdateFeed(
+      { ...feed, downloadUrl: 'https://github.com/PishiKuchulu/iSecure/releases/download/v1.0.3/a.apk' },
+      '1.0.2',
+    ),
+    null,
+  );
+  // Non-strict version -> refused.
+  assert.equal(parseUpdateFeed({ ...feed, version: '1.0' }, '1.0.2'), null);
+  assert.equal(parseUpdateFeed({ ...feed, version: 'v1.0.3' }, '1.0.2'), null);
+  // Garbage input is safe.
+  assert.equal(parseUpdateFeed(null, '1.0.2'), null);
+  assert.equal(parseUpdateFeed('nope', '1.0.2'), null);
 });

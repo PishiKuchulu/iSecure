@@ -6,12 +6,44 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
   Palette, Globe, Lock, Check, Shield, Download, Upload, AlertTriangle,
-  Cloud, RefreshCw, Trash2, LogOut, RotateCcw
+  Cloud, RefreshCw, Trash2, LogOut, RotateCcw, ChevronDown, Fingerprint,
+  ArrowUpCircle, Info
 } from 'lucide-react';
 import { UserSettings } from '../types';
 import { localesMap, LocaleStrings } from '../locales';
 import { DriveBackupFile } from '../services/googleDriveBackup';
+import { isUpdaterSupported } from '../services/updater';
 import UpdateSection from './UpdateSection';
+
+interface AccordionSectionProps {
+  icon: React.ReactNode;
+  title: string;
+  open: boolean;
+  onToggle: () => void;
+  children: React.ReactNode;
+}
+
+function AccordionSection({ icon, title, open, onToggle, children }: AccordionSectionProps) {
+  return (
+    <section className="bg-white dark:bg-zinc-950 border border-gray-200 dark:border-zinc-800 rounded-2xl overflow-hidden">
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-expanded={open}
+        className="w-full flex items-center gap-2 px-5 py-4 text-start cursor-pointer"
+      >
+        {icon}
+        <span className="text-sm font-semibold text-gray-900 dark:text-zinc-100 flex-1">
+          {title}
+        </span>
+        <ChevronDown
+          className={`w-4 h-4 text-gray-400 transition-transform duration-200 ${open ? 'rotate-180' : ''}`}
+        />
+      </button>
+      {open && <div className="px-5 pb-5 space-y-5">{children}</div>}
+    </section>
+  );
+}
 
 interface SettingsViewProps {
   settings: UserSettings;
@@ -31,6 +63,10 @@ interface SettingsViewProps {
   onDriveOverwriteBackup: (fileId: string, fileName: string) => Promise<void>;
   onDriveRestoreBackup: (fileId: string, backupPassword: string) => Promise<void>;
   onDriveDeleteBackup: (fileId: string) => Promise<void>;
+  biometricAvailable: boolean;
+  biometricEnabled: boolean;
+  onEnableBiometric: (candidate: string) => Promise<void>;
+  onDisableBiometric: () => Promise<void>;
 }
 
 type PendingDriveConfirmation =
@@ -56,6 +92,10 @@ export default function SettingsView({
   onDriveOverwriteBackup,
   onDriveRestoreBackup,
   onDriveDeleteBackup,
+  biometricAvailable,
+  biometricEnabled,
+  onEnableBiometric,
+  onDisableBiometric,
 }: SettingsViewProps) {
   const [importPassword, setImportPassword] = useState('');
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -67,6 +107,51 @@ export default function SettingsView({
   const [driveRestorePassword, setDriveRestorePassword] = useState('');
   const [driveRestoreError, setDriveRestoreError] = useState('');
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+  // Accordion sections (first one open by default).
+  const [openSections, setOpenSections] = useState<Record<string, boolean>>({ theme: true });
+  const toggleSection = (id: string) =>
+    setOpenSections(prev => ({ ...prev, [id]: !prev[id] }));
+  const updaterSupported = isUpdaterSupported();
+
+  // Fingerprint unlock enable flow (master-secret confirmation form).
+  const [bioFormOpen, setBioFormOpen] = useState(false);
+  const [bioSecretInput, setBioSecretInput] = useState('');
+  const [bioError, setBioError] = useState('');
+  const [bioBusy, setBioBusy] = useState(false);
+
+  const handleBioCheckbox = async (checked: boolean) => {
+    if (!checked) {
+      setBioBusy(true);
+      try {
+        await onDisableBiometric();
+        setBioFormOpen(false);
+        setBioSecretInput('');
+        setBioError('');
+      } finally {
+        setBioBusy(false);
+      }
+    } else {
+      setBioFormOpen(true);
+      setBioError('');
+    }
+  };
+
+  const handleBioEnableSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!bioSecretInput || bioBusy) return;
+    setBioBusy(true);
+    setBioError('');
+    try {
+      await onEnableBiometric(bioSecretInput);
+      setBioSecretInput('');
+      setBioFormOpen(false);
+    } catch (err) {
+      setBioError(err instanceof Error ? err.message : strings.wrongPassword);
+    } finally {
+      setBioBusy(false);
+    }
+  };
 
   useEffect(() => {
     const handleEscape = (e: KeyboardEvent) => {
@@ -211,15 +296,14 @@ export default function SettingsView({
   };
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-5 gap-6" id="settings_panel_wrapper">
-      {/* Left side options */}
-      <div className="lg:col-span-3 space-y-6">
+    <div className="space-y-4 w-full max-w-3xl mx-auto" id="settings_panel_wrapper">
         {/* Theme Settings */}
-        <div className="p-5 bg-white dark:bg-zinc-950 border border-gray-200 dark:border-zinc-800 rounded-2xl">
-          <h3 className="text-sm font-semibold text-gray-900 dark:text-zinc-100 flex items-center gap-2 mb-4">
-            <Palette className="w-4 h-4 text-blue-500" />
-            {strings.theme}
-          </h3>
+        <AccordionSection
+          icon={<Palette className="w-4 h-4 text-blue-500" />}
+          title={strings.theme}
+          open={Boolean(openSections.theme)}
+          onToggle={() => toggleSection('theme')}
+        >
 
           <div className="grid grid-cols-2 gap-3">
             {themes.map(t => (
@@ -238,14 +322,15 @@ export default function SettingsView({
               </button>
             ))}
           </div>
-        </div>
+        </AccordionSection>
 
         {/* Dynamic Language Switcher */}
-        <div className="p-5 bg-white dark:bg-zinc-950 border border-gray-200 dark:border-zinc-800 rounded-2xl">
-          <h3 className="text-sm font-semibold text-gray-900 dark:text-zinc-100 flex items-center gap-2 mb-4">
-            <Globe className="w-4 h-4 text-teal-500" />
-            Languages & Localizations (Full LTR/RTL Mirroring)
-          </h3>
+        <AccordionSection
+          icon={<Globe className="w-4 h-4 text-teal-500" />}
+          title="Languages & Localizations (Full LTR/RTL Mirroring)"
+          open={Boolean(openSections.language)}
+          onToggle={() => toggleSection('language')}
+        >
 
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
             {languagesList.map(lang => (
@@ -264,14 +349,15 @@ export default function SettingsView({
               </button>
             ))}
           </div>
-        </div>
+        </AccordionSection>
 
         {/* Security timeouts */}
-        <div className="p-5 bg-white dark:bg-zinc-950 border border-gray-200 dark:border-zinc-800 rounded-2xl space-y-5">
-          <h3 className="text-sm font-semibold text-gray-900 dark:text-zinc-100 flex items-center gap-2 pb-2 border-b border-gray-100 dark:border-zinc-800">
-            <Shield className="w-4 h-4 text-violet-500" />
-            App Timeout & Protections
-          </h3>
+        <AccordionSection
+          icon={<Shield className="w-4 h-4 text-violet-500" />}
+          title="App Timeout & Protections"
+          open={Boolean(openSections.security)}
+          onToggle={() => toggleSection('security')}
+        >
 
           {/* Auto Lock timer */}
           <div>
@@ -329,14 +415,69 @@ export default function SettingsView({
               ))}
             </div>
           </div>
-        </div>
+
+          {/* Fingerprint unlock (native Android only) */}
+          {biometricAvailable && (
+            <div>
+              <label className="flex items-start gap-3 p-3 bg-gray-50 dark:bg-zinc-900/60 rounded-xl border border-gray-200 dark:border-zinc-800 cursor-pointer select-none transition">
+                <input
+                  type="checkbox"
+                  checked={biometricEnabled}
+                  disabled={bioBusy}
+                  onChange={(e) => void handleBioCheckbox(e.target.checked)}
+                  className="w-4 h-4 mt-0.5 accent-violet-500 cursor-pointer"
+                />
+                <div>
+                  <p className="text-xs font-bold text-gray-800 dark:text-zinc-200 flex items-center gap-1.5">
+                    <Fingerprint className="w-3.5 h-3.5 text-violet-500" />
+                    {strings.biometricSetting}
+                  </p>
+                  <p className="text-[10px] text-gray-400 mt-0.5">
+                    {strings.biometricSettingDesc}
+                  </p>
+                </div>
+              </label>
+
+              {bioFormOpen && !biometricEnabled && (
+                <form onSubmit={handleBioEnableSubmit} className="mt-3 space-y-2">
+                  <label className="text-[11px] font-semibold text-gray-700 dark:text-zinc-300 block">
+                    {strings.biometricConfirmPassword}
+                  </label>
+                  <input
+                    type="password"
+                    required
+                    autoComplete="current-password"
+                    placeholder={strings.masterPassword}
+                    value={bioSecretInput}
+                    onChange={(e) => setBioSecretInput(e.target.value)}
+                    className="w-full text-xs p-2.5 bg-gray-50 dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 rounded-lg outline-none focus:border-violet-500"
+                  />
+                  {bioError && (
+                    <p role="alert" className="text-[11px] text-rose-500 font-semibold">
+                      {bioError}
+                    </p>
+                  )}
+                  <button
+                    type="submit"
+                    disabled={bioBusy || !bioSecretInput}
+                    className="w-full py-2 px-3 bg-violet-600 hover:bg-violet-700 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition cursor-pointer disabled:opacity-60"
+                  >
+                    <Fingerprint className="w-4 h-4" />
+                    {strings.biometricUnlockBtn}
+                  </button>
+                </form>
+              )}
+            </div>
+          )}
+        </AccordionSection>
 
         {/* Web Display Protections */}
-        <div className="p-5 bg-white dark:bg-zinc-950 border border-gray-200 dark:border-zinc-800 rounded-2xl space-y-4">
-          <h3 className="text-sm font-semibold text-gray-900 dark:text-zinc-100 flex items-center gap-2">
-            <Lock className="w-4 h-4 text-emerald-500" />
-            Display & Privacy Overlay
-          </h3>
+        <AccordionSection
+          icon={<Lock className="w-4 h-4 text-emerald-500" />}
+          title="Display & Privacy Overlay"
+          open={Boolean(openSections.display)}
+          onToggle={() => toggleSection('display')}
+        >
 
           <label className="flex items-start gap-3 p-3 bg-gray-50 dark:bg-zinc-900/60 rounded-xl border border-gray-200 dark:border-zinc-800 cursor-pointer select-none transition">
             <input
@@ -352,17 +493,15 @@ export default function SettingsView({
               </p>
             </div>
           </label>
-        </div>
-      </div>
+        </AccordionSection>
 
-      {/* Right side options: Google Drive Zero-Knowledge Cloud Backup + Local Export/Import & About */}
-      <div className="lg:col-span-2 space-y-6">
         {/* Google Drive Zero-Knowledge Encrypted Cloud Backup */}
-        <div className="p-5 bg-white dark:bg-zinc-950 border border-gray-200 dark:border-zinc-800 rounded-2xl space-y-4">
-          <h3 className="text-sm font-semibold text-gray-900 dark:text-zinc-100 flex items-center gap-2">
-            <Cloud className="w-4 h-4 text-blue-500" />
-            Google Drive Encrypted Backup
-          </h3>
+        <AccordionSection
+          icon={<Cloud className="w-4 h-4 text-blue-500" />}
+          title="Google Drive Encrypted Backup"
+          open={Boolean(openSections.drive)}
+          onToggle={() => toggleSection('drive')}
+        >
           <p className="text-[11px] text-gray-400 leading-relaxed">
             Your vault is encrypted locally with AES-256-GCM before upload. Google Drive stores only the encrypted `.pishivault.json` file and can only access backup files created by iSecure.
           </p>
@@ -516,14 +655,15 @@ export default function SettingsView({
               <span>{driveStatus.msg}</span>
             </div>
           )}
-        </div>
+        </AccordionSection>
 
         {/* Local Encrypted File Export / Import */}
-        <div className="p-5 bg-white dark:bg-zinc-950 border border-gray-200 dark:border-zinc-800 rounded-2xl space-y-4">
-          <h3 className="text-sm font-semibold text-gray-900 dark:text-zinc-100 flex items-center gap-2">
-            <Lock className="w-4 h-4 text-orange-400" />
-            {strings.cloudBackupTitle}
-          </h3>
+        <AccordionSection
+          icon={<Lock className="w-4 h-4 text-orange-400" />}
+          title={strings.cloudBackupTitle}
+          open={Boolean(openSections.local)}
+          onToggle={() => toggleSection('local')}
+        >
           <p className="text-[11px] text-gray-400 leading-relaxed">
             {strings.cloudBackupDesc} Export or restore your AES-256-GCM encrypted `.pishivault.json` archive locally without sending keys to third-party servers.
           </p>
@@ -608,17 +748,31 @@ export default function SettingsView({
               ))}
             </div>
           </div>
-        </div>
+        </AccordionSection>
 
         {/* App Updates (Android in-app updater; hidden on web) */}
-        <UpdateSection strings={strings} />
+        {updaterSupported && (
+          <AccordionSection
+            icon={<ArrowUpCircle className="w-4 h-4 text-emerald-500" />}
+            title={strings.updatesTitle}
+            open={Boolean(openSections.updates)}
+            onToggle={() => toggleSection('updates')}
+          >
+            <UpdateSection strings={strings} bare />
+          </AccordionSection>
+        )}
 
         {/* About Card */}
-        <div className="p-5 bg-gradient-to-br from-gray-50 to-gray-100 dark:from-zinc-900 dark:to-zinc-950 border border-gray-200 dark:border-zinc-800 rounded-2xl text-center">
+        <AccordionSection
+          icon={<Info className="w-4 h-4 text-gray-500" />}
+          title={strings.aboutTitle}
+          open={Boolean(openSections.about)}
+          onToggle={() => toggleSection('about')}
+        >
+          <div className="text-center">
           <div className="w-12 h-12 bg-gray-900 dark:bg-white text-white dark:text-gray-900 rounded-2xl flex items-center justify-center font-black mx-auto text-sm tracking-tighter">
             iS
           </div>
-          <h4 className="text-xs font-bold text-gray-900 dark:text-zinc-100 mt-3">{strings.aboutTitle}</h4>
           <p className="text-[10px] text-gray-400 font-mono mt-1">Zero-Knowledge Password Manager</p>
 
           <p className="text-[11px] text-gray-500 dark:text-zinc-400 mt-4 leading-relaxed text-center">
@@ -628,8 +782,8 @@ export default function SettingsView({
           <div className="mt-5 text-[10px] font-mono text-gray-500 dark:text-zinc-400 bg-white/60 dark:bg-black/20 p-2.5 rounded-xl border border-gray-200 dark:border-zinc-800">
             Web Crypto API: PBKDF2-SHA256 + AES-256-GCM
           </div>
-        </div>
-      </div>
+          </div>
+        </AccordionSection>
 
       {/* Mandatory Confirmation Dialog for Overwrite / Delete on Google Drive */}
       {pendingConfirm && (
