@@ -37,9 +37,10 @@ jobs:
 
       - name: Decode keystore from secret
         env:
-          KEYSTORE_BASE64: ${{ secrets.ISECURE_KEYSTORE_BASE64 }}
+          KEYSTORE_B64_A: ${{ secrets.ISECURE_KEYSTORE_B64_A }}
+          KEYSTORE_B64_B: ${{ secrets.ISECURE_KEYSTORE_B64_B }}
         run: |
-          echo "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/release.p12"
+          printf '%s%s' "$KEYSTORE_B64_A" "$KEYSTORE_B64_B" | tr -d '[:space:]' | base64 -d > "$RUNNER_TEMP/release.p12"
           ls -l "$RUNNER_TEMP/release.p12"
           sha256sum "$RUNNER_TEMP/release.p12"
 
