@@ -11,6 +11,7 @@ import {
 import { UserSettings } from '../types';
 import { localesMap, LocaleStrings } from '../locales';
 import { DriveBackupFile } from '../services/googleDriveBackup';
+import UpdateSection from './UpdateSection';
 
 interface SettingsViewProps {
   settings: UserSettings;
@@ -609,13 +610,16 @@ export default function SettingsView({
           </div>
         </div>
 
+        {/* App Updates (Android in-app updater; hidden on web) */}
+        <UpdateSection strings={strings} />
+
         {/* About Card */}
         <div className="p-5 bg-gradient-to-br from-gray-50 to-gray-100 dark:from-zinc-900 dark:to-zinc-950 border border-gray-200 dark:border-zinc-800 rounded-2xl text-center">
           <div className="w-12 h-12 bg-gray-900 dark:bg-white text-white dark:text-gray-900 rounded-2xl flex items-center justify-center font-black mx-auto text-sm tracking-tighter">
-            PS
+            iS
           </div>
           <h4 className="text-xs font-bold text-gray-900 dark:text-zinc-100 mt-3">{strings.aboutTitle}</h4>
-          <p className="text-[10px] text-gray-400 font-mono mt-1">v3.6.0-ZeroKnowledge-Drive</p>
+          <p className="text-[10px] text-gray-400 font-mono mt-1">Zero-Knowledge Password Manager</p>
 
           <p className="text-[11px] text-gray-500 dark:text-zinc-400 mt-4 leading-relaxed text-center">
             {strings.aboutDesc}

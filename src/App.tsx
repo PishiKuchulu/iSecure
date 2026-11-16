@@ -7,7 +7,7 @@ import React, { useState, useEffect, useRef, useCallback, lazy, Suspense } from 
 import { motion, AnimatePresence } from 'motion/react';
 import {
   Key, Shield, AlertTriangle, Settings, Eye, EyeOff,
-  LogOut, Layers, LayoutDashboard, Database, Lock, RotateCcw
+  LogOut, Layers, LayoutDashboard, Database, Lock, RotateCcw, ArrowUpCircle
 } from 'lucide-react';
 import { VaultEntry, UserSettings } from './types';
 import { localesMap } from './locales';
@@ -48,6 +48,11 @@ import {
   saveVaultEnvelope,
 } from './services/vaultStorage';
 import { clearClipboardIfOurs } from './services/clipboard';
+import {
+  checkForUpdate,
+  isUpdaterSupported,
+  type UpdateInfo,
+} from './services/updater';
 import { App as CapacitorApp } from '@capacitor/app';
 
 const DashboardView = lazy(() => import('./components/DashboardView'));
@@ -137,6 +142,27 @@ function SystemClock({ localeCode }: { localeCode: string }) {
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<string>('dashboard');
+  const [availableUpdate, setAvailableUpdate] = useState<UpdateInfo | null>(null);
+  const [updateBannerDismissed, setUpdateBannerDismissed] = useState(false);
+
+  // In-app updater: one silent check per launch (Android only). A banner
+  // appears only when a newer signed release exists.
+  useEffect(() => {
+    if (!isUpdaterSupported()) return;
+    let cancelled = false;
+    checkForUpdate()
+      .then((result) => {
+        if (!cancelled && result.kind === 'available') {
+          setAvailableUpdate(result.info);
+        }
+      })
+      .catch(() => {
+        /* silent: the Settings card offers a manual check */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // Vault gate state
   const [isSetupState, setIsSetupState] = useState<boolean>(true);
@@ -1291,6 +1317,29 @@ export default function App() {
 
             {/* Main View Container */}
             <main className="flex-1 max-w-7xl w-full mx-auto p-6">
+              {availableUpdate && !updateBannerDismissed && (
+                <div className="mb-4 flex items-center gap-3 p-3 rounded-xl border border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300">
+                  <ArrowUpCircle className="w-4 h-4 shrink-0" />
+                  <button
+                    type="button"
+                    className="flex-1 text-start text-xs font-bold cursor-pointer"
+                    onClick={() => {
+                      recordActivity();
+                      setActiveTab('settings');
+                    }}
+                  >
+                    {strings.updateAvailableMsg} — v{availableUpdate.version}
+                  </button>
+                  <button
+                    type="button"
+                    aria-label={strings.cancel}
+                    className="text-xs px-2 py-1 rounded-lg hover:bg-emerald-500/10 cursor-pointer"
+                    onClick={() => setUpdateBannerDismissed(true)}
+                  >
+                    ✕
+                  </button>
+                </div>
+              )}
               <Suspense
                 fallback={
                   <div className="flex items-center justify-center py-24">

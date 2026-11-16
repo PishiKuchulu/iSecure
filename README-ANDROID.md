@@ -162,3 +162,21 @@ to main and publishes GitHub Release v1.0.0; the four ISECURE_* values
 live in the repository's Actions secrets. The keystore is also backed up
 in Farzad's Google Drive as `marblemd-release.p12` (MD5-verified upload,
 2026-11-16).
+
+## In-app updater (v1.0.1, 2026-11-16)
+
+Anvex-style updater: Settings gains an "App Updates" card and a silent
+check runs once per launch (banner when a newer release exists). Rules
+ported from Anvex: the releases LIST is scanned for strict vX.Y.Z tags
+(never /releases/latest); a `.sha256` sidecar asset is MANDATORY (the CI
+workflow publishes one next to the APK); asset URLs must stay under this
+repo's /releases/download/ prefix; the download (Filesystem.downloadFile
+into the app cache) is SHA-256-verified, then the native ApkInstaller
+plugin verifies the APK's signer certificate equals the installed app's
+(fail-closed) before handing it to the system installer via FileProvider.
+Manifest gained REQUEST_INSTALL_PACKAGES; when the unknown-apps install
+permission is off, the plugin routes the user to its settings screen and
+the UI offers Install again. Pure logic lives in
+src/services/updateLogic.ts (unit-tested); version is now derived from
+build.gradle by the workflow (tag v<versionName>, asset
+iSecure-<versionName>-release.apk + .sha256).
