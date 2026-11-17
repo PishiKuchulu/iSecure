@@ -492,7 +492,7 @@ export default function SettingsView({
             <div>
               <p className="text-xs font-bold text-gray-800 dark:text-zinc-200">{strings.screenshotProtect}</p>
               <p className="text-[10px] text-gray-400 mt-0.5">
-                {strings.screenshotProtectDesc} (Note: browser tabs render an anti-shoulder watermark; OS-level blocking applies to native mobile builds.)
+                {strings.screenshotProtectDesc}
               </p>
             </div>
           </label>

@@ -346,7 +346,8 @@ export default function App() {
   }, [settings.theme]);
 
   // AUD-006: the screenshot-protection toggle drives the real OS-level
-  // FLAG_SECURE flag on Android, not just the web watermark overlay.
+  // FLAG_SECURE flag on Android. (The template's watermark overlay was
+  // removed in 2.0.2; the toggle is the OS protection only.)
   useEffect(() => {
     void applyScreenshotProtection(settings.screenshotProtection);
   }, [settings.screenshotProtection]);
@@ -1082,13 +1083,6 @@ export default function App() {
       onKeyDown={recordActivity}
       id="pishisecure_root_element"
     >
-      {/* Dynamic Watermark alerting Screenshot Protection if configured */}
-      {settings.screenshotProtection && isUnlocked && (
-        <div className="pointer-events-none fixed inset-0 z-50 overflow-hidden opacity-[0.015] select-none dark:opacity-[0.01] flex items-center justify-center rotate-12">
-          <span className="text-3xl font-black tracking-widest uppercase">ISECURE ANTI-CAP BUFFER LIVE</span>
-        </div>
-      )}
-
       {persistError && isUnlocked && (
         <div className="fixed top-0 inset-x-0 z-[90] bg-rose-600 text-white text-[11px] font-bold px-4 py-2.5 flex items-center justify-between gap-3 shadow-lg">
           <span>{persistError}</span>
