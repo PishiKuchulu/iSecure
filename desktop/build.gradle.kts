@@ -40,6 +40,7 @@ kotlin {
         }
         commonTest.dependencies {
             implementation(kotlin("test"))
+            implementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.9.0")
         }
         // src/jvmMain holds code shared by the two JVM-family targets
         // (crypto + file stores). The default hierarchy template does not
@@ -51,12 +52,23 @@ kotlin {
         desktopMain.kotlin.srcDir("src/jvmMain/kotlin")
         androidMain.dependencies {
             implementation("androidx.activity:activity-compose:1.9.3")
+            // Google Identity Authorization API (Drive sign-in port) and
+            // BiometricPrompt (fingerprint unlock port) — the same
+            // libraries the Capacitor plugins used.
+            implementation("com.google.android.gms:play-services-auth:21.3.0")
+            implementation("androidx.biometric:biometric:1.1.0")
         }
         desktopMain.dependencies {
             implementation(compose.desktop.currentOs)
         }
     }
 }
+
+// Release signing is injected by CI (kmp-release.yml) through the
+// environment, exactly like the Capacitor workflow: the decrypted
+// keystore path + the three signing secrets. Without them (local dev),
+// the release build stays unsigned and only assembleDebug is used.
+val kmpKeystoreFile = System.getenv("ISECURE_KEYSTORE_FILE")
 
 android {
     namespace = "com.isecure.app"
@@ -65,8 +77,21 @@ android {
         applicationId = "com.isecure.app"
         minSdk = 23
         targetSdk = 35
-        versionCode = 1
-        versionName = "0.1.0"
+        // 2.0.0 is the Kotlin edition replacing the Capacitor build in
+        // place: versionCode must exceed 1.0.5's 6 for the in-app
+        // update to install over it.
+        versionCode = 7
+        versionName = "2.0.0"
+    }
+    if (kmpKeystoreFile != null) {
+        signingConfigs {
+            create("release") {
+                storeFile = file(kmpKeystoreFile)
+                storePassword = System.getenv("ISECURE_KEYSTORE_PASSWORD")
+                keyAlias = System.getenv("ISECURE_KEY_ALIAS")
+                keyPassword = System.getenv("ISECURE_KEY_PASSWORD")
+            }
+        }
     }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
@@ -75,6 +100,9 @@ android {
     buildTypes {
         release {
             isMinifyEnabled = false
+            if (kmpKeystoreFile != null) {
+                signingConfig = signingConfigs.getByName("release")
+            }
         }
     }
     packaging {
