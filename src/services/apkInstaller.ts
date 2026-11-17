@@ -25,8 +25,13 @@ export interface ApkInstallerPlugin {
    *  the currently installed app (fail-closed update verification). */
   verifySigner(options: { path: string }): Promise<{ matches: boolean }>;
   /** Native HTTP download into the app cache dir (follows redirects
-   *  manually; not bound by WebView CORS). Emits 'downloadProgress'. */
-  download(options: { url: string; fileName: string }): Promise<{ path: string }>;
+   *  manually; not bound by WebView CORS). Emits 'downloadProgress'.
+   *  `maxBytes`, when > 0, aborts the download once exceeded (AUD-010). */
+  download(options: {
+    url: string;
+    fileName: string;
+    maxBytes?: number;
+  }): Promise<{ path: string }>;
   addListener(
     eventName: 'downloadProgress',
     listener: (progress: DownloadProgress) => void,

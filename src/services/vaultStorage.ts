@@ -158,13 +158,42 @@ export async function saveVaultEnvelope(envelope: EncryptedVaultEnvelope): Promi
     // Directory already exists.
   }
 
+  // Atomic replace (AUD-007): write the complete envelope to a tmp file
+  // first, then rename it over the vault file. A same-directory rename is
+  // atomic on Android, so a process kill at any point leaves either the
+  // old or the new COMPLETE envelope — never a truncated one. This mirrors
+  // the KMP edition's FileVaultStore (write-then-rename).
+  const tmpPath = `${VAULT_PATH}.tmp`;
   await Filesystem.writeFile({
-    path: VAULT_PATH,
+    path: tmpPath,
     directory: Directory.Data,
     encoding: Encoding.UTF8,
     data: raw,
     recursive: true,
   });
+  try {
+    await Filesystem.rename({
+      from: tmpPath,
+      to: VAULT_PATH,
+      directory: Directory.Data,
+      toDirectory: Directory.Data,
+    });
+  } catch {
+    // Some filesystems refuse to rename over an existing file. The tmp
+    // file is fully written at this point, so dropping the old file and
+    // renaming again is still crash-safe.
+    try {
+      await Filesystem.deleteFile({ path: VAULT_PATH, directory: Directory.Data });
+    } catch {
+      // File already absent.
+    }
+    await Filesystem.rename({
+      from: tmpPath,
+      to: VAULT_PATH,
+      directory: Directory.Data,
+      toDirectory: Directory.Data,
+    });
+  }
 
   // The file is authoritative on native; drop any stale WebView copy.
   try {
@@ -190,5 +219,13 @@ export async function deleteVaultEnvelope(): Promise<void> {
     });
   } catch {
     // File already absent.
+  }
+  try {
+    await Filesystem.deleteFile({
+      path: `${VAULT_PATH}.tmp`,
+      directory: Directory.Data,
+    });
+  } catch {
+    // No staged write pending.
   }
 }

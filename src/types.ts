@@ -51,5 +51,4 @@ export interface UserSettings {
   autoLockMinutes: number; // 0 = disabled, 1, 5, 15, 30
   clipboardClearSeconds: number; // 0 = disabled, 15, 30, 60
   screenshotProtection: boolean;
-  backupMode: 'manual' | 'auto' | 'wifi';
 }

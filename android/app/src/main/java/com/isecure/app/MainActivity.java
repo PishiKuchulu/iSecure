@@ -14,6 +14,8 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(GoogleDriveAuthPlugin.class);
         // Local plugin for fingerprint unlock (Keystore-bound secret).
         registerPlugin(BiometricUnlockPlugin.class);
+        // Local plugin wiring the screenshot-protection setting to FLAG_SECURE.
+        registerPlugin(AppSecurityPlugin.class);
         super.onCreate(savedInstanceState);
         // iSecure is a password manager: block screenshots, screen
         // recording and recent-apps thumbnails of vault content at OS level.

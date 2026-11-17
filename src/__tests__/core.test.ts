@@ -219,8 +219,6 @@ test('blueprints: SQL schema comments out ERD block cleanly', () => {
 import {
   UPDATE_FEED_ORIGIN,
   compareVersions,
-  parseLatestRelease,
-  parseSha256Sidecar,
   parseUpdateFeed,
 } from '../services/updateLogic';
 
@@ -230,77 +228,6 @@ test('updater: compareVersions orders dotted versions numerically', () => {
   assert.ok(compareVersions('1.10.0', '1.9.9') > 0);
   assert.ok(compareVersions('2.0.0', '1.99.99') > 0);
   assert.ok(compareVersions('1.0.0', '1.0.1') < 0);
-});
-
-test('updater: parseLatestRelease requires a newer strict tag and a mandatory sha256 sidecar', () => {
-  const repo = 'PishiKuchulu/iSecure';
-  const dl = (tag: string, name: string) =>
-    `https://github.com/${repo}/releases/download/${tag}/${name}`;
-  const rel = (tag: string, assets: unknown[]) => ({
-    tag_name: tag,
-    draft: false,
-    prerelease: false,
-    body: 'notes',
-    published_at: '2026-11-16T00:00:00Z',
-    assets,
-  });
-  const apk = (tag: string) => ({
-    name: 'app-release.apk',
-    browser_download_url: dl(tag, 'app-release.apk'),
-    size: 100,
-  });
-  const sha = (tag: string) => ({
-    name: 'app-release.apk.sha256',
-    browser_download_url: dl(tag, 'app-release.apk.sha256'),
-    size: 10,
-  });
-
-  // Nothing newer than the installed version.
-  assert.equal(
-    parseLatestRelease([rel('v1.0.0', [apk('v1.0.0'), sha('v1.0.0')])], '1.0.0', repo),
-    null,
-  );
-  // Newer but missing the checksum sidecar -> skipped (checksum mandatory).
-  assert.equal(
-    parseLatestRelease([rel('v1.0.1', [apk('v1.0.1')])], '1.0.0', repo),
-    null,
-  );
-  // Newer with both assets -> picked.
-  const info = parseLatestRelease(
-    [rel('v1.0.1', [apk('v1.0.1'), sha('v1.0.1')])],
-    '1.0.0',
-    repo,
-  );
-  assert.equal(info?.version, '1.0.1');
-  assert.equal(info?.tag, 'v1.0.1');
-
-  // Picks the max version; drafts and non-strict tags are ignored.
-  const many = [
-    rel('v1.0.2', [apk('v1.0.2'), sha('v1.0.2')]),
-    rel('v1.1.0', [apk('v1.1.0'), sha('v1.1.0')]),
-    { ...rel('v9.9.9', [apk('v9.9.9'), sha('v9.9.9')]), draft: true },
-    rel('latest', [apk('latest'), sha('latest')]),
-  ];
-  assert.equal(parseLatestRelease(many, '1.0.0', repo)?.version, '1.1.0');
-
-  // Asset URLs outside this repo's download prefix are rejected.
-  const evil = rel('v2.0.0', [
-    { name: 'a.apk', browser_download_url: 'https://evil.example.com/a.apk', size: 1 },
-    { name: 'a.apk.sha256', browser_download_url: 'https://evil.example.com/a.apk.sha256', size: 1 },
-  ]);
-  assert.equal(parseLatestRelease([evil], '1.0.0', repo), null);
-
-  // Garbage input is safe.
-  assert.equal(parseLatestRelease(null, '1.0.0', repo), null);
-  assert.equal(parseLatestRelease({}, '1.0.0', repo), null);
-});
-
-test('updater: parseSha256Sidecar extracts the digest', () => {
-  const h = 'a'.repeat(64);
-  assert.equal(parseSha256Sidecar(`${h}  iSecure-1.0.1-release.apk\n`), h);
-  assert.equal(parseSha256Sidecar('A'.repeat(64)), 'a'.repeat(64));
-  assert.equal(parseSha256Sidecar('no hash here'), null);
-  assert.equal(parseSha256Sidecar(''), null);
 });
 
 test('updater: parseUpdateFeed validates the Cloudflare feed manifest strictly', () => {

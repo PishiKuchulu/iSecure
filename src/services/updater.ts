@@ -141,6 +141,9 @@ export async function downloadAndVerifyUpdate(
     const result = await ApkInstaller.download({
       url: info.apkUrl,
       fileName,
+      // AUD-010: cap the download at ~4x the manifest's declared size so
+      // a broken feed cannot fill the cache before the hash check runs.
+      maxBytes: info.apkSize > 0 ? info.apkSize * 4 : undefined,
     });
     if (!result.path) throw new Error('Update download failed.');
     apkPath = result.path;

@@ -10,34 +10,42 @@ import kotlinx.serialization.Serializable
 
 @Serializable
 data class PasswordHistoryItem(
-    val id: String,
-    val password: String,
-    val changedAt: String,
+    val id: String = "",
+    val password: String = "",
+    val changedAt: String = "",
 )
 
 @Serializable
 data class CustomField(
-    val label: String,
-    val value: String,
-    val isSecret: Boolean,
+    val label: String = "",
+    val value: String = "",
+    val isSecret: Boolean = false,
 )
 
+/**
+ * Defaults on every field mirror the TS edition's tolerance (AUD-011):
+ * src/crypto.ts passes entry objects through and the TS UI/utils treat
+ * missing fields defensively, so a hand-edited or third-party-produced
+ * payload that the TS build opens must also open here. Payloads written
+ * by any edition of the app always carry every field, so the defaults
+ * never alter app-produced data.
+ */
 @Serializable
 data class VaultEntry(
-    val id: String,
-    val title: String,
-    val username: String,
+    val id: String = "",
+    val title: String = "",
+    val username: String = "",
     val password: String? = null,
     val url: String? = null,
     val notes: String? = null,
     val tags: List<String> = emptyList(),
-    val category: String,
+    val category: String = "custom",
     val isFavorite: Boolean = false,
     val isTrash: Boolean = false,
     val deletedAt: String? = null,
-    val createdDate: String,
-    val modifiedDate: String,
-    val entryType: String,
+    val createdDate: String = "",
+    val modifiedDate: String = "",
+    val entryType: String = "website",
     val history: List<PasswordHistoryItem> = emptyList(),
     val customFields: List<CustomField>? = null,
 )

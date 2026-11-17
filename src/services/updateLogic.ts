@@ -3,36 +3,18 @@
  * SPDX-License-Identifier: Apache-2.0
  *
  * Pure update-check logic (no Capacitor imports, unit-testable).
- * Mirrors the Anvex updater rules:
- *  - scan the releases LIST for strict vX.Y.Z tags (never /releases/latest)
- *  - a .sha256 sidecar asset is MANDATORY — a release without one is skipped
- *  - asset URLs must stay under this repo's /releases/download/ prefix
+ * The update feed is the only update source (see parseUpdateFeed below);
+ * the legacy GitHub-release-list parser was removed in 1.0.5 (AUD-009) —
+ * it had no production callers left and its two trust models side by side
+ * invited mistakes.
  */
-
-export interface ReleaseAssetLike {
-  name: string;
-  browser_download_url: string;
-  size: number;
-}
-
-export interface ReleaseLike {
-  tag_name: string;
-  draft?: boolean;
-  prerelease?: boolean;
-  body?: string | null;
-  published_at?: string | null;
-  assets: ReleaseAssetLike[];
-}
 
 export interface UpdateInfo {
   version: string;
   tag: string;
   apkUrl: string;
   apkSize: number;
-  sha256Url: string;
-  /** Expected SHA-256 of the APK when the source provides it inline
-   *  (update feed). Empty for the GitHub-list path, where the digest
-   *  comes from the .sha256 sidecar instead. */
+  /** Expected SHA-256 of the APK, provided inline by the update feed. */
   sha256: string;
   notes: string;
   publishedAt: string;
@@ -48,57 +30,6 @@ export function compareVersions(a: string, b: string): number {
     if (diff !== 0) return diff;
   }
   return 0;
-}
-
-/**
- * Pick the newest release strictly newer than `currentVersion`, or null.
- * Releases missing an .apk asset or its .sha256 sidecar are ignored.
- */
-export function parseLatestRelease(
-  releases: unknown,
-  currentVersion: string,
-  repo: string,
-): UpdateInfo | null {
-  if (!Array.isArray(releases)) return null;
-  const prefix = `https://github.com/${repo}/releases/download/`;
-  let best: UpdateInfo | null = null;
-  for (const raw of releases as ReleaseLike[]) {
-    if (!raw || raw.draft || raw.prerelease) continue;
-    const m = /^v(\d+)\.(\d+)\.(\d+)$/.exec(raw.tag_name || '');
-    if (!m) continue;
-    const version = `${m[1]}.${m[2]}.${m[3]}`;
-    if (compareVersions(version, currentVersion) <= 0) continue;
-    if (best && compareVersions(version, best.version) <= 0) continue;
-    const assets = Array.isArray(raw.assets) ? raw.assets : [];
-    const apk = assets.find((a) => a && a.name && a.name.toLowerCase().endsWith('.apk'));
-    const sha = assets.find(
-      (a) => a && a.name && a.name.toLowerCase().endsWith('.apk.sha256'),
-    );
-    if (!apk || !sha) continue;
-    if (
-      !apk.browser_download_url.startsWith(prefix) ||
-      !sha.browser_download_url.startsWith(prefix)
-    ) {
-      continue;
-    }
-    best = {
-      version,
-      tag: raw.tag_name,
-      apkUrl: apk.browser_download_url,
-      apkSize: apk.size || 0,
-      sha256Url: sha.browser_download_url,
-      sha256: '',
-      notes: raw.body || '',
-      publishedAt: raw.published_at || '',
-    };
-  }
-  return best;
-}
-
-/** Extract the first 64-char hex digest from a sha256sum sidecar text. */
-export function parseSha256Sidecar(text: string): string | null {
-  const m = /([0-9a-fA-F]{64})/.exec(text || '');
-  return m ? m[1].toLowerCase() : null;
 }
 
 /**
@@ -140,7 +71,6 @@ export function parseUpdateFeed(
     tag: typeof f.tag === 'string' ? f.tag : `v${version}`,
     apkUrl,
     apkSize: typeof f.sizeBytes === 'number' ? f.sizeBytes : 0,
-    sha256Url: '',
     sha256,
     notes: '',
     publishedAt: '',

@@ -263,3 +263,51 @@ Farzad's device test of v1.0.3 surfaced three defects, all fixed here:
   and lock screens and the Settings About card still showed the "iS"
   text monogram / a generic lock glyph. They now show the real icon
   artwork (`public/icon.png`, the approved shield, 256 px).
+
+## Forensic-audit fix wave (v1.0.5)
+
+Fixes for the 2026-11-17 Universal Forensic Audit (13 findings,
+AUD-001..013; report in the audit workspace, not in this repo):
+
+- **AUD-001** — `keystore.enc` is now wrapped with a dedicated long
+  random passphrase held only in the `ISECURE_ENC_PASSPHRASE` CI secret
+  (rotated 2026-11-17), no longer with the keystore's own password.
+- **AUD-002** — `android:allowBackup="false"` in both editions: the
+  encrypted vault and biometric preferences no longer leave the device
+  via Android Auto Backup / device transfer. Drive + file export are
+  the sanctioned backup paths.
+- **AUD-003** — the backup-mode selector (manual/auto/wifi) is REMOVED:
+  it was persisted and rendered but no code ever acted on it, implying
+  automatic backups that never happened. Backups are manual, labeled
+  as such.
+- **AUD-004** — root `tsconfig.json` now excludes `desktop/` and
+  `android/`; `bun run lint` is green again (the KMP tooling scripts
+  are Bun scripts, not part of the web app's type check).
+- **AUD-005** — the release workflow no longer re-publishes an existing
+  version on every push: the build still verifies the tree, but the
+  publish step is skipped when the tag already exists (manual dispatch
+  with `force_release` can override). A version tag is now one
+  immutable artifact set.
+- **AUD-006** — the screenshot-protection toggle now genuinely controls
+  the OS-level `FLAG_SECURE` flag via the new `AppSecurity` plugin
+  (it previously only toggled the web watermark; native blocking was
+  always on). Secure-by-default at startup is unchanged.
+- **AUD-007** — native vault writes are atomic: the envelope is written
+  to a `.tmp` file and renamed over the vault file, mirroring the KMP
+  store. A crash mid-save can no longer truncate the only vault copy.
+- **AUD-008** — unused template dependencies removed (`@google/genai`,
+  `express`, `dotenv`, `@types/express`), the fictitious Gemini
+  capability claim removed from `metadata.json`, `.env.example` deleted.
+- **AUD-009** — the dead GitHub-release-list updater path
+  (`parseLatestRelease`, `parseSha256Sidecar`) and its tests are
+  deleted; the update feed is the only update source.
+- **AUD-010** — the native downloader now enforces a size cap
+  (~4x the feed manifest's declared APK size) so a broken feed cannot
+  fill the cache partition before the SHA-256 check runs.
+- **AUD-011** — KMP payload models carry defaults matching the TS
+  edition's tolerance, so sparse/hand-edited payloads open in both
+  editions (regression test in LogicTest).
+- **AUD-012** — `desktop/vectors/README.md` documents that the vector
+  fixture secret is synthetic and throwaway.
+- **AUD-013** — CI now gates the release job on the web unit tests and
+  type check; KMP `desktopTest` runs as its own (non-gating) job.

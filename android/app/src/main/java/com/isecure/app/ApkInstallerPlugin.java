@@ -105,6 +105,12 @@ public class ApkInstallerPlugin extends Plugin {
             call.reject("url and fileName are required");
             return;
         }
+        // Optional hard cap (AUD-010): a broken or hostile feed must not be
+        // able to fill the cache partition before the SHA-256 check runs.
+        // The caller passes ~4x the manifest's declared APK size; 0/absent
+        // means no cap.
+        Long maxBytesBoxed = call.getLong("maxBytes");
+        final long maxBytes = maxBytesBoxed == null ? 0 : maxBytesBoxed;
         File dest = new File(getContext().getCacheDir(), fileName);
         new Thread(() -> {
             HttpURLConnection conn = null;
@@ -139,6 +145,10 @@ public class ApkInstallerPlugin extends Plugin {
                         while ((n = in.read(buf)) != -1) {
                             out.write(buf, 0, n);
                             done += n;
+                            if (maxBytes > 0 && done > maxBytes) {
+                                throw new IOException(
+                                    "Download exceeds the expected size cap");
+                            }
                             if (done - lastNotify >= 256 * 1024) {
                                 lastNotify = done;
                                 notifyProgress(url, done, total);

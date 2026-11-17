@@ -5,7 +5,9 @@ import com.isecure.core.i18n.stringsFor
 import com.isecure.core.logic.PasswordGenerator
 import com.isecure.core.logic.VaultLogic
 import com.isecure.core.model.VaultEntry
+import com.isecure.core.model.VaultPayload
 import com.isecure.core.platform.RandomSource
+import kotlinx.serialization.json.Json
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -194,5 +196,23 @@ class LogicTest {
             stringsFor("fa")["masterPassword"],
             stringsFor("fa").masterPassword,
         )
+    }
+
+    @Test
+    fun sparsePayloadDeserializesWithDefaults() {
+        // AUD-011 / R8: a payload missing fields the TS edition tolerates
+        // (hand-edited or third-party-produced) must still open here.
+        val json = Json { ignoreUnknownKeys = true }
+        val sparse = """{"entries":[{"id":"e1","title":"Only a title"}]}"""
+        val payload = json.decodeFromString<VaultPayload>(sparse)
+        assertEquals(1, payload.entries.size)
+        val e = payload.entries[0]
+        assertEquals("e1", e.id)
+        assertEquals("Only a title", e.title)
+        assertEquals("", e.username)
+        assertEquals("website", e.entryType)
+        assertEquals("custom", e.category)
+        assertEquals(emptyList(), payload.customCategories)
+        assertNull(payload.lastBackupTime)
     }
 }

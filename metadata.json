@@ -1,6 +1,1 @@
-{
-  "name": "iSecure",
-  "description": "Enterprise-grade, security-first, cross-platform password manager and architectural blueprint explorer.",
-  "requestFramePermissions": [],
-  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
-}
+{"description":"Zero-knowledge password manager. All vault data is encrypted on-device with a key derived from the master password (PBKDF2-HMAC-SHA256 + AES-256-GCM); no server ever sees plaintext.","majorCapabilities":[],"name":"iSecure","requestFramePermissions":[]}

@@ -40,6 +40,7 @@ import {
   signOutGoogleDrive,
   uploadEncryptedBackupToDrive,
 } from './services/googleDriveBackup';
+import { applyScreenshotProtection } from './services/appSecurity';
 import {
   deleteVaultEnvelope,
   isNativePlatform,
@@ -85,13 +86,11 @@ const DEFAULT_SETTINGS: UserSettings = {
   autoLockMinutes: 5,
   clipboardClearSeconds: 30,
   screenshotProtection: true,
-  backupMode: 'manual',
 };
 
 const VALID_THEMES: ReadonlySet<UserSettings['theme']> = new Set(['light', 'dark', 'amoled', 'system']);
 const VALID_AUTOLOCK = new Set([0, 1, 5, 15, 30]);
 const VALID_CLIPBOARD = new Set([0, 15, 30, 60]);
-const VALID_BACKUP_MODES: ReadonlySet<UserSettings['backupMode']> = new Set(['manual', 'auto', 'wifi']);
 
 function parseValidatedSettings(raw: string | null): UserSettings {
   if (!raw) return DEFAULT_SETTINGS;
@@ -120,17 +119,12 @@ function parseValidatedSettings(raw: string | null): UserSettings {
       ? obj.screenshotProtection
       : DEFAULT_SETTINGS.screenshotProtection;
 
-    const backupMode = typeof obj.backupMode === 'string' && VALID_BACKUP_MODES.has(obj.backupMode as UserSettings['backupMode'])
-      ? (obj.backupMode as UserSettings['backupMode'])
-      : DEFAULT_SETTINGS.backupMode;
-
     return {
       theme,
       language,
       autoLockMinutes,
       clipboardClearSeconds,
       screenshotProtection,
-      backupMode,
     };
   } catch {
     return DEFAULT_SETTINGS;
@@ -350,6 +344,12 @@ export default function App() {
     }
     return undefined;
   }, [settings.theme]);
+
+  // AUD-006: the screenshot-protection toggle drives the real OS-level
+  // FLAG_SECURE flag on Android, not just the web watermark overlay.
+  useEffect(() => {
+    void applyScreenshotProtection(settings.screenshotProtection);
+  }, [settings.screenshotProtection]);
 
   const handleLockVault = useCallback(() => {
     // Locking also drops any secret this app left in the clipboard (P-04).

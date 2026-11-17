@@ -726,32 +726,6 @@ export default function SettingsView({
             </div>
           )}
 
-          <div>
-            <label className="text-[10px] font-mono text-gray-400 uppercase block mb-1">
-              {strings.backupModeOpt}
-            </label>
-            <div className="space-y-1.5">
-              {[
-                { id: 'manual', label: strings.backupManual },
-                { id: 'auto', label: strings.backupAuto },
-                { id: 'wifi', label: strings.backupWifi },
-              ].map(m => (
-                <button
-                  type="button"
-                  key={m.id}
-                  onClick={() => onUpdateSettings({ backupMode: m.id as UserSettings['backupMode'] })}
-                  className={`w-full py-2 px-3 text-xs rounded-lg border text-start flex justify-between items-center transition cursor-pointer ${
-                    settings.backupMode === m.id
-                      ? 'bg-orange-500/10 text-orange-600 border-orange-500/20 font-bold'
-                      : 'bg-transparent border-gray-200 dark:border-zinc-800 hover:bg-gray-50 dark:hover:bg-zinc-900'
-                  }`}
-                >
-                  <span>{m.label}</span>
-                  {settings.backupMode === m.id && <Check className="w-3.5 h-3.5 text-orange-600" />}
-                </button>
-              ))}
-            </div>
-          </div>
         </AccordionSection>
 
         {/* App Updates (Android in-app updater; hidden on web) */}
