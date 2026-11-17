@@ -4,12 +4,55 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      force_release:
+        description: 'Publish even if this version is already released'
+        type: boolean
+        default: false
 
 permissions:
   contents: write
 
 jobs:
+  # AUD-013: the release job is gated on the web test suite and the type
+  # check. A red suite means no signed release, ever.
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+
+      - name: Install web dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Unit tests
+        run: bun run test
+
+      - name: Type check
+        run: bun run lint
+
+  # KMP shared-edition tests: visible on every push, but not a release
+  # gate — the KMP edition is not part of the shipped Capacitor artifact,
+  # so its failures must not block Android releases.
+  kmp-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: KMP tests (desktop target)
+        working-directory: desktop
+        run: |
+          chmod +x gradlew
+          ./gradlew desktopTest --no-daemon
+
   release:
+    needs: check
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -35,11 +78,14 @@ jobs:
       - name: Sync Capacitor Android project
         run: bunx cap sync android
 
+      # AUD-001: keystore.enc is wrapped with a dedicated long random
+      # passphrase held only in this secret (rotated 2026-11-17); it is
+      # NOT the keystore's own password.
       - name: Decrypt keystore
         env:
-          ISECURE_KEYSTORE_PASSWORD: ${{ secrets.ISECURE_KEYSTORE_PASSWORD }}
+          ISECURE_ENC_PASSPHRASE: ${{ secrets.ISECURE_ENC_PASSPHRASE }}
         run: |
-          openssl enc -d -aes-256-cbc -salt -pbkdf2 -md sha256 -in keystore.enc -out "$RUNNER_TEMP/release.p12" -pass env:ISECURE_KEYSTORE_PASSWORD
+          openssl enc -d -aes-256-cbc -salt -pbkdf2 -md sha256 -in keystore.enc -out "$RUNNER_TEMP/release.p12" -pass env:ISECURE_ENC_PASSPHRASE
           ls -l "$RUNNER_TEMP/release.p12"
           sha256sum "$RUNNER_TEMP/release.p12"
 
@@ -64,7 +110,27 @@ jobs:
           sha256sum "iSecure-$VERSION-release.apk" > "iSecure-$VERSION-release.apk.sha256"
           cat "iSecure-$VERSION-release.apk.sha256"
 
+      # AUD-005: a version tag denotes ONE immutable artifact set. When
+      # the release already exists, the build above still verified the
+      # tree, but nothing is re-published. Manual dispatch can force.
+      - name: Gate re-publishing an existing version
+        id: gate
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FORCE_RELEASE: ${{ inputs.force_release }}
+        run: |
+          if [ "$FORCE_RELEASE" = "true" ]; then
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+            echo "Manual dispatch with force_release — publishing."
+          elif gh release view "v$VERSION" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "v$VERSION is already published — publish step skipped (build was still verified)."
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Publish GitHub Release
+        if: steps.gate.outputs.skip != 'true'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ env.VERSION }}
