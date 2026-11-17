@@ -1,0 +1,53 @@
+{
+  "entries": [
+    {
+      "id": "entry-vector-1",
+      "title": "حساب بانک ملت",
+      "username": "farzad.sh",
+      "password": "S3cret!نمونه",
+      "url": "https://bank.example.ir",
+      "notes": "حساب اصلی حقوقی",
+      "tags": [
+        "مالی"
+      ],
+      "category": "bank",
+      "isFavorite": true,
+      "isTrash": false,
+      "createdDate": "2026-01-01T00:00:00.000Z",
+      "modifiedDate": "2026-11-17T00:00:00.000Z",
+      "entryType": "bank",
+      "history": [
+        {
+          "id": "hist-1",
+          "password": "OldPass!1",
+          "changedAt": "2026-06-01T00:00:00.000Z"
+        }
+      ],
+      "customFields": [
+        {
+          "label": "شماره شبا",
+          "value": "IR120170000000123456789001",
+          "isSecret": false
+        }
+      ]
+    },
+    {
+      "id": "entry-vector-2",
+      "title": "یادداشت امن",
+      "username": "",
+      "notes": "متن محرمانهٔ فارسی بدون رمز عبور",
+      "tags": [],
+      "category": "note",
+      "isFavorite": false,
+      "isTrash": false,
+      "createdDate": "2026-02-01T00:00:00.000Z",
+      "modifiedDate": "2026-02-01T00:00:00.000Z",
+      "entryType": "note",
+      "history": []
+    }
+  ],
+  "customCategories": [
+    "بانک"
+  ],
+  "lastBackupTime": "2026-11-17T00:00:00.000Z"
+}
