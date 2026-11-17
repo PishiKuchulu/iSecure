@@ -67,6 +67,7 @@ interface SettingsViewProps {
   biometricEnabled: boolean;
   onEnableBiometric: (candidate: string) => Promise<void>;
   onDisableBiometric: () => Promise<void>;
+  onFilePickerOpen?: () => void;
 }
 
 type PendingDriveConfirmation =
@@ -96,6 +97,7 @@ export default function SettingsView({
   biometricEnabled,
   onEnableBiometric,
   onDisableBiometric,
+  onFilePickerOpen,
 }: SettingsViewProps) {
   const [importPassword, setImportPassword] = useState('');
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -108,8 +110,9 @@ export default function SettingsView({
   const [driveRestoreError, setDriveRestoreError] = useState('');
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
-  // Accordion sections (first one open by default).
-  const [openSections, setOpenSections] = useState<Record<string, boolean>>({ theme: true });
+  // Accordion sections (appearance + security open by default, so the
+  // fingerprint toggle is visible without hunting through the menu).
+  const [openSections, setOpenSections] = useState<Record<string, boolean>>({ theme: true, security: true });
   const toggleSection = (id: string) =>
     setOpenSections(prev => ({ ...prev, [id]: !prev[id] }));
   const updaterSupported = isUpdaterSupported();
@@ -686,6 +689,7 @@ export default function SettingsView({
               ref={fileInputRef}
               type="file"
               accept=".json,.pishivault"
+              onClick={() => onFilePickerOpen?.()}
               onChange={(e) => setSelectedFile(e.target.files?.[0] ?? null)}
               className="w-full text-[11px] text-gray-500 file:me-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-gray-100 dark:file:bg-zinc-800 file:text-gray-700 dark:file:text-zinc-200 cursor-pointer"
             />
@@ -770,9 +774,11 @@ export default function SettingsView({
           onToggle={() => toggleSection('about')}
         >
           <div className="text-center">
-          <div className="w-12 h-12 bg-gray-900 dark:bg-white text-white dark:text-gray-900 rounded-2xl flex items-center justify-center font-black mx-auto text-sm tracking-tighter">
-            iS
-          </div>
+          <img
+            src="/icon.png"
+            alt="iSecure"
+            className="w-12 h-12 rounded-2xl mx-auto"
+          />
           <p className="text-[10px] text-gray-400 font-mono mt-1">Zero-Knowledge Password Manager</p>
 
           <p className="text-[11px] text-gray-500 dark:text-zinc-400 mt-4 leading-relaxed text-center">

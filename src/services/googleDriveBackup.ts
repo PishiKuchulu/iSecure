@@ -43,15 +43,23 @@ function toProfile(user: User): DriveUserProfile {
 async function fetchGoogleProfile(
   accessToken: string,
 ): Promise<DriveUserProfile> {
+  // The profile is cosmetic (the token is what connects Drive), so it
+  // must never block sign-in: cap the lookup at 10 seconds and fall back
+  // to an empty profile on any failure or stall.
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 10_000);
   try {
     const res = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
       headers: { Authorization: `Bearer ${accessToken}` },
+      signal: ctrl.signal,
     });
     if (!res.ok) return { email: null, displayName: null };
     const j = (await res.json()) as { email?: string; name?: string };
     return { email: j.email ?? null, displayName: j.name ?? null };
   } catch {
     return { email: null, displayName: null };
+  } finally {
+    clearTimeout(timer);
   }
 }
 

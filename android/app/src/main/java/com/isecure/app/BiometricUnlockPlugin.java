@@ -48,9 +48,33 @@ public class BiometricUnlockPlugin extends Plugin {
     private static final String PREFS = "isecure_biometric";
     private static final String PREF_IV = "iv";
     private static final String PREF_CT = "ct";
-    private static final int AUTHENTICATORS = BiometricManager.Authenticators.BIOMETRIC_STRONG;
 
     private PluginCall pendingCall;
+
+    /**
+     * Some devices (notably several Xiaomi/MIUI builds) report their
+     * fingerprint sensor as BIOMETRIC_WEAK even though it is enrolled
+     * and works. STRONG is preferred wherever the device offers it; the
+     * plugin falls back to WEAK so the feature exists at all there.
+     */
+    private boolean strongAvailable() {
+        return BiometricManager.from(getContext())
+            .canAuthenticate(BiometricManager.Authenticators.BIOMETRIC_STRONG)
+            == BiometricManager.BIOMETRIC_SUCCESS;
+    }
+
+    private boolean anyBiometricAvailable() {
+        return strongAvailable()
+            || BiometricManager.from(getContext())
+                .canAuthenticate(BiometricManager.Authenticators.BIOMETRIC_WEAK)
+                == BiometricManager.BIOMETRIC_SUCCESS;
+    }
+
+    private int promptAuthenticators() {
+        return strongAvailable()
+            ? BiometricManager.Authenticators.BIOMETRIC_STRONG
+            : BiometricManager.Authenticators.BIOMETRIC_WEAK;
+    }
 
     private SharedPreferences prefs() {
         return getContext().getSharedPreferences(PREFS, Context.MODE_PRIVATE);
@@ -69,10 +93,12 @@ public class BiometricUnlockPlugin extends Plugin {
             .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
             .setKeySize(256)
             .setUserAuthenticationRequired(true);
-        if (Build.VERSION.SDK_INT >= 30) {
+        if (Build.VERSION.SDK_INT >= 30 && strongAvailable()) {
             // 0 = authentication required for every use of the key.
             builder.setUserAuthenticationParameters(0, KeyProperties.AUTH_BIOMETRIC_STRONG);
         } else {
+            // Per-use authentication via the prompt's CryptoObject; also
+            // the only option when the sensor is classified WEAK.
             builder.setUserAuthenticationValidityDurationSeconds(-1);
         }
         KeyGenerator kg = KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, "AndroidKeyStore");
@@ -88,7 +114,7 @@ public class BiometricUnlockPlugin extends Plugin {
             .setTitle(title)
             .setSubtitle(subtitle)
             .setNegativeButtonText(cancel)
-            .setAllowedAuthenticators(AUTHENTICATORS)
+            .setAllowedAuthenticators(promptAuthenticators())
             .build();
     }
 
@@ -156,9 +182,8 @@ public class BiometricUnlockPlugin extends Plugin {
 
     @PluginMethod
     public void isAvailable(PluginCall call) {
-        int status = BiometricManager.from(getContext()).canAuthenticate(AUTHENTICATORS);
         JSObject ret = new JSObject();
-        ret.put("available", status == BiometricManager.BIOMETRIC_SUCCESS);
+        ret.put("available", anyBiometricAvailable());
         call.resolve(ret);
     }
 

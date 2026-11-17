@@ -68,6 +68,25 @@ public class GoogleDriveAuthPlugin extends Plugin {
                 call.reject("Google authorization failed: " + e.getMessage()));
     }
 
+    /**
+     * If the hosting activity comes back to the foreground while an
+     * authorization is still pending, the consent result was lost on the
+     * way (onActivityResult is always delivered BEFORE onResume when it
+     * arrives at all). Settle the call with an error instead of leaving
+     * the JS promise — and with it the sign-in button — hanging forever.
+     */
+    @Override
+    protected void handleOnResume() {
+        super.handleOnResume();
+        if (pendingCall != null) {
+            PluginCall call = pendingCall;
+            pendingCall = null;
+            call.reject(
+                "Google sign-in did not complete. Please try again.",
+                "INCOMPLETE");
+        }
+    }
+
     private void resolveWithToken(PluginCall call, String accessToken) {
         if (accessToken == null || accessToken.isEmpty()) {
             call.reject("Google did not return an access token.");

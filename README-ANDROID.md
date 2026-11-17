@@ -230,3 +230,36 @@ Three changes, two of them driven by on-device failures of v1.0.1/1.0.2:
 - **Settings is an accordion.** Every settings card is now a collapsible
   section (theme open by default); the App Updates card renders bare
   inside its section. All controls keep their previous wiring.
+
+## On-device fix wave (v1.0.4, 2026-11-17)
+
+Farzad's device test of v1.0.3 surfaced three defects, all fixed here:
+
+- **Drive sign-in never completed.** Tapping sign-in opened the Google
+  consent UI, which backgrounds the app — and the background handler
+  locked the vault mid-sign-in, so he returned to a lock screen. Worse,
+  the sign-in promise could then never settle (a lost activity result
+  leaves the plugin call pending), leaving the button disabled forever.
+  Fixes: the background lock is suppressed while an external flow is in
+  flight (Drive consent, backup file picker, update installer stamp a
+  deadline on `autoLockSuppressedUntilRef`); `GoogleDriveAuthPlugin`
+  rejects an orphaned pending call in `handleOnResume` (a delivered
+  result always arrives before resume, so a still-pending call at
+  resume is a lost one); the JS sign-in has a 90 s watchdog; and the
+  cosmetic profile lookup is capped at 10 s so it can never block the
+  connection itself.
+- **Fingerprint unlock was undiscoverable and possibly unavailable.**
+  The Settings toggle sat inside a collapsed accordion section, nothing
+  on the lock screen hinted at the feature, and the availability check
+  required BIOMETRIC_STRONG — several Xiaomi/MIUI builds classify their
+  enrolled fingerprint as BIOMETRIC_WEAK. Now: availability accepts
+  STRONG or WEAK (STRONG still preferred for the prompt and the
+  Keystore key binding where the device offers it); the Security
+  accordion section starts open; and right after a successful password
+  unlock the app offers fingerprint enrollment in one tap, using the
+  just-typed secret (dismissible permanently via "Cancel", stored in a
+  localStorage flag).
+- **The app icon never appeared inside the app.** The loading, setup
+  and lock screens and the Settings About card still showed the "iS"
+  text monogram / a generic lock glyph. They now show the real icon
+  artwork (`public/icon.png`, the approved shield, 256 px).

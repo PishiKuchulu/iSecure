@@ -148,6 +148,24 @@ function SystemClock({ localeCode }: { localeCode: string }) {
   return <span>{new Date(now).toLocaleString(localeCode)}</span>;
 }
 
+/** Reject if `promise` has not settled within `ms` — UI watchdogs so a
+ *  hung native call can never wedge a screen state forever. */
+function withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(message)), ms);
+    promise.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (err: unknown) => {
+        clearTimeout(timer);
+        reject(err instanceof Error ? err : new Error(String(err)));
+      },
+    );
+  });
+}
+
 export default function App() {
   const [activeTab, setActiveTab] = useState<string>('dashboard');
   const [availableUpdate, setAvailableUpdate] = useState<UpdateInfo | null>(null);
@@ -196,6 +214,9 @@ export default function App() {
   // secret is stored in the biometric Keystore store.
   const [biometricAvailable, setBiometricAvailable] = useState(false);
   const [biometricEnabled, setBiometricEnabled] = useState(false);
+  // One-time offer shown right after a password unlock: holds the secret
+  // the user just typed so enabling fingerprint unlock needs no re-type.
+  const [bioOfferSecret, setBioOfferSecret] = useState<string | null>(null);
   useEffect(() => {
     let cancelled = false;
     void (async () => {
@@ -352,6 +373,11 @@ export default function App() {
   useEffect(() => {
     isUnlockedRef.current = isUnlocked;
   }, [isUnlocked]);
+  // While an external flow is on screen (Google sign-in consent, the
+  // backup file picker, the update installer), the app reports itself
+  // inactive — that must not lock the vault mid-flow. Flows stamp this
+  // deadline; the background-lock handler honours it.
+  const autoLockSuppressedUntilRef = useRef(0);
   const activeTabRef = useRef(activeTab);
   useEffect(() => {
     activeTabRef.current = activeTab;
@@ -366,7 +392,11 @@ export default function App() {
     const handles: { remove: () => Promise<void> }[] = [];
     (async () => {
       const stateHandle = await CapacitorApp.addListener('appStateChange', ({ isActive }) => {
-        if (!isActive && isUnlockedRef.current) {
+        if (
+          !isActive &&
+          isUnlockedRef.current &&
+          Date.now() > autoLockSuppressedUntilRef.current
+        ) {
           handleLockVault();
         }
       });
@@ -523,7 +553,10 @@ export default function App() {
   // decryption. Returns true on success. Shared by the password form and
   // by the fingerprint path, which retrieves the same master secret from
   // the biometric Keystore store.
-  const attemptUnlock = async (secret: string): Promise<boolean> => {
+  const attemptUnlock = async (
+    secret: string,
+    fromPasswordForm = false,
+  ): Promise<boolean> => {
     if (isDeriving || !secret) return false;
 
     const envelope = storedEnvelopeRef.current ?? (await loadVaultEnvelope());
@@ -559,6 +592,16 @@ export default function App() {
       if (purgedEntries.length !== payload.entries.length) {
         await persistVaultState(purgedEntries, payload.customCategories, nextBackupTime || null);
       }
+      // Right after a password unlock is the one moment the master
+      // secret is at hand: offer fingerprint unlock for next time.
+      if (
+        fromPasswordForm &&
+        biometricAvailable &&
+        !biometricEnabled &&
+        !localStorage.getItem('isecure_bio_offer_dismissed')
+      ) {
+        setBioOfferSecret(secret);
+      }
       return true;
     } catch {
       setFailedAttempts(prev => prev + 1);
@@ -571,7 +614,29 @@ export default function App() {
 
   const handleUnlockVault = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
-    await attemptUnlock(masterPasswordInput);
+    await attemptUnlock(masterPasswordInput, true);
+  };
+
+  const handleBioOfferEnable = async () => {
+    const secret = bioOfferSecret;
+    setBioOfferSecret(null);
+    if (!secret) return;
+    try {
+      await storeBiometricSecret(secret, biometricPromptStrings);
+      setBiometricEnabled(true);
+    } catch {
+      // Prompt cancelled — fingerprint unlock can still be enabled
+      // later from Settings.
+    }
+  };
+
+  const handleBioOfferDismiss = () => {
+    try {
+      localStorage.setItem('isecure_bio_offer_dismissed', '1');
+    } catch {
+      // storage unavailable — the offer may simply reappear next unlock
+    }
+    setBioOfferSecret(null);
   };
 
   const biometricPromptStrings = {
@@ -858,14 +923,25 @@ export default function App() {
 
   const handleDriveSignIn = async (): Promise<void> => {
     recordActivity();
+    // The Google consent UI takes the foreground: don't let the
+    // background-lock fire while it is up (the user would return to a
+    // locked vault in the middle of signing in).
+    autoLockSuppressedUntilRef.current = Date.now() + 180_000;
     setIsDriveBusy(true);
     try {
-      const { user, accessToken } = await signInWithGoogleDrive();
+      // Watchdog: whatever happens natively, the UI must recover — a
+      // sign-in that never settles leaves the button disabled forever.
+      const { user, accessToken } = await withTimeout(
+        signInWithGoogleDrive(),
+        90_000,
+        'Google sign-in timed out. Please try again.',
+      );
       setDriveUser(user);
       setDriveAccessToken(accessToken);
       const files = await listDriveBackups(accessToken);
       setDriveBackups(files);
     } finally {
+      autoLockSuppressedUntilRef.current = 0;
       setIsDriveBusy(false);
     }
   };
@@ -1036,9 +1112,11 @@ export default function App() {
             exit={{ opacity: 0 }}
             className="flex-1 flex flex-col items-center justify-center p-6 text-center space-y-4"
           >
-            <div className="w-14 h-14 bg-gray-900 dark:bg-white text-white dark:text-gray-900 rounded-2xl flex items-center justify-center font-black text-base italic shadow-md">
-              iS
-            </div>
+            <img
+              src="/icon.png"
+              alt="iSecure"
+              className="w-14 h-14 rounded-2xl shadow-md"
+            />
             <div className="w-7 h-7 rounded-full border-2 border-gray-300 dark:border-zinc-700 border-t-blue-500 animate-spin" />
           </motion.div>
         ) : isStorageCorrupt ? (
@@ -1113,9 +1191,11 @@ export default function App() {
               </select>
             </div>
 
-            <div className="w-14 h-14 bg-gray-900 dark:bg-white text-white dark:text-gray-900 rounded-2xl flex items-center justify-center font-black text-base italic shadow-md">
-              iS
-            </div>
+            <img
+              src="/icon.png"
+              alt="iSecure"
+              className="w-14 h-14 rounded-2xl shadow-md"
+            />
 
             <div>
               <h1 className="text-xl font-black text-gray-900 dark:text-white">{strings.appName}</h1>
@@ -1252,9 +1332,11 @@ export default function App() {
               </select>
             </div>
 
-            <div className="w-14 h-14 bg-gray-900 dark:bg-white text-white dark:text-gray-900 rounded-2xl flex items-center justify-center font-black text-base shadow-sm">
-              <Lock className="w-6 h-6" />
-            </div>
+            <img
+              src="/icon.png"
+              alt="iSecure"
+              className="w-14 h-14 rounded-2xl shadow-sm"
+            />
 
             <div>
               <h1 className="text-lg font-bold text-gray-900 dark:text-white">{strings.appLocked}</h1>
@@ -1553,6 +1635,9 @@ export default function App() {
                         biometricEnabled={biometricEnabled}
                         onEnableBiometric={handleEnableBiometric}
                         onDisableBiometric={handleDisableBiometric}
+                        onFilePickerOpen={() => {
+                          autoLockSuppressedUntilRef.current = Date.now() + 180_000;
+                        }}
                       />
                     )}
 
@@ -1561,6 +1646,43 @@ export default function App() {
                 </AnimatePresence>
               </Suspense>
             </main>
+
+            {/* One-time fingerprint-unlock offer (after a password unlock) */}
+            {bioOfferSecret && (
+              <div
+                className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-4"
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="bio-offer-title"
+              >
+                <div className="p-6 bg-white dark:bg-zinc-900 rounded-2xl border border-gray-200 dark:border-zinc-800 max-w-sm w-full text-start space-y-4 shadow-xl">
+                  <div className="flex items-center gap-2 text-sm font-bold text-gray-900 dark:text-white" id="bio-offer-title">
+                    <Fingerprint className="w-5 h-5 text-violet-500" />
+                    <span>{strings.biometricSetting}</span>
+                  </div>
+                  <p className="text-xs text-gray-500 dark:text-zinc-400 leading-relaxed">
+                    {strings.biometricSettingDesc}
+                  </p>
+                  <div className="flex justify-end gap-2 pt-2">
+                    <button
+                      type="button"
+                      onClick={handleBioOfferDismiss}
+                      className="px-4 py-2 text-xs font-semibold rounded-lg border border-gray-200 dark:border-zinc-700 text-gray-600 dark:text-zinc-300 cursor-pointer"
+                    >
+                      {strings.cancel}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void handleBioOfferEnable()}
+                      className="px-4 py-2 text-xs font-bold rounded-lg bg-violet-600 hover:bg-violet-700 text-white cursor-pointer flex items-center gap-2"
+                    >
+                      <Fingerprint className="w-4 h-4" />
+                      {strings.biometricUnlockBtn}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* Footer */}
             <footer className="border-t border-gray-200 dark:border-zinc-900 bg-white dark:bg-zinc-950 px-6 py-4 text-[10px] font-mono text-gray-400 text-center">
