@@ -66,6 +66,7 @@ class VaultAppState(
     private var sessionSalt: String? = null
     private var sessionIterations: Int = VaultCipher.DEFAULT_ITERATIONS
     private var lastActivity: Instant = Clock.System.now()
+    private var autoLockSuppressedUntilMs: Long = 0
     private var lastCopied: String? = null
     private var clipboardJob: Job? = null
 
@@ -76,13 +77,22 @@ class VaultAppState(
     val random: com.isecure.core.platform.RandomSource get() = services.random
 
     /** Backup export/import is offered only where the platform has a
-     *  file picker (desktop today). */
+     *  file picker (desktop dialogs, Android SAF). */
     val fileExchangeAvailable: Boolean get() = services.fileExchange != null
 
-    fun saveBackupFile(content: String): Boolean =
-        services.fileExchange?.saveTextFile("pishisecure-backup.json", content) ?: false
+    suspend fun saveBackupFile(content: String): Boolean {
+        // The picker round trip is user-paced; the vault must not
+        // auto-lock while it is open (the Capacitor edition learned
+        // this with its suppression window).
+        suppressAutoLock(180)
+        return services.fileExchange
+            ?.saveTextFile("pishisecure-backup.json", content) ?: false
+    }
 
-    fun openBackupFile(): String? = services.fileExchange?.openTextFile()
+    suspend fun openBackupFile(): String? {
+        suppressAutoLock(180)
+        return services.fileExchange?.openTextFile()
+    }
 
     fun initialize() {
         settings = AppSettings(
@@ -91,6 +101,8 @@ class VaultAppState(
             autoLockMinutes = services.settingsStore.get("autoLockMinutes")?.toIntOrNull() ?: 5,
             clipboardClearSeconds = services.settingsStore.get("clipboardClearSeconds")?.toIntOrNull() ?: 30,
         )
+        biometricEnabled =
+            services.settingsStore.get("biometricEnabled") == "1"
         if (!services.vaultStore.exists()) {
             screen = VaultScreen.SETUP
             return
@@ -191,6 +203,11 @@ class VaultAppState(
     fun eraseCorruptVault() {
         services.vaultStore.delete()
         storedEnvelope = null
+        // The stored biometric copy of the master secret must not
+        // survive a factory reset.
+        services.biometric?.clearSecret()
+        biometricEnabled = false
+        services.settingsStore.remove("biometricEnabled")
         screen = VaultScreen.SETUP
     }
 
@@ -198,8 +215,23 @@ class VaultAppState(
         lastActivity = Clock.System.now()
     }
 
+    /** External flows (Google consent, file picker, installer) take the
+     *  user out of the app for an unbounded moment; while the deadline
+     *  runs, auto-lock is held off so the vault cannot lock mid-flow. */
+    fun suppressAutoLock(seconds: Long) {
+        autoLockSuppressedUntilMs = maxOf(
+            autoLockSuppressedUntilMs,
+            Clock.System.now().toEpochMilliseconds() + seconds * 1_000L,
+        )
+    }
+
     fun checkAutoLock() {
         if (!isUnlocked || settings.autoLockMinutes <= 0) return
+        if (Clock.System.now().toEpochMilliseconds() <
+            autoLockSuppressedUntilMs
+        ) {
+            return
+        }
         val elapsedMs = Clock.System.now().toEpochMilliseconds() -
             lastActivity.toEpochMilliseconds()
         if (elapsedMs >= settings.autoLockMinutes * 60_000L) {
@@ -370,6 +402,237 @@ class VaultAppState(
         persist()
         touch()
         return true
+    }
+
+    // ---- Biometric unlock (Android) ----
+
+    var biometricEnabled by mutableStateOf(false)
+        private set
+
+    val biometricSupported: Boolean
+        get() = services.biometric?.isAvailable() == true
+
+    /** Offered on the unlock screen only when the feature is on and a
+     *  secret is actually stored. */
+    val biometricUnlockAvailable: Boolean
+        get() = biometricEnabled &&
+            services.biometric?.hasStoredSecret() == true
+
+    suspend fun unlockWithBiometric(): Boolean {
+        val biometric = services.biometric ?: return false
+        val secret = biometric.retrieveSecret(
+            strings.biometricPromptTitle,
+            strings.biometricPromptSubtitle,
+            strings.cancel,
+        ) ?: return false
+        val ok = unlock(secret)
+        if (!ok) {
+            // The stored copy no longer opens this vault (e.g. the
+            // vault was re-created): wipe it instead of failing forever,
+            // like the Capacitor edition does.
+            disableBiometric()
+            unlockError = false
+        }
+        return ok
+    }
+
+    /** Enabling requires proving the typed secret opens the current
+     *  vault first, then a biometric prompt seals it. */
+    suspend fun enableBiometric(secret: String): Boolean {
+        val biometric = services.biometric ?: return false
+        val envelope = storedEnvelope ?: return false
+        val opens = try {
+            withContext(Dispatchers.Default) {
+                services.cipher.decryptEnvelope(envelope, secret)
+            }
+            true
+        } catch (e: Exception) {
+            false
+        }
+        if (!opens) return false
+        val stored = biometric.storeSecret(
+            secret,
+            strings.biometricPromptTitle,
+            strings.biometricPromptSubtitle,
+            strings.cancel,
+        )
+        if (stored) {
+            biometricEnabled = true
+            services.settingsStore.put("biometricEnabled", "1")
+        }
+        return stored
+    }
+
+    fun disableBiometric() {
+        services.biometric?.clearSecret()
+        biometricEnabled = false
+        services.settingsStore.remove("biometricEnabled")
+    }
+
+    // ---- Google Drive backup (Android) ----
+
+    private val driveService =
+        com.isecure.core.drive.DriveBackupService(services.httpTransport)
+
+    var driveUser by mutableStateOf<
+        com.isecure.core.platform.DriveUserProfile?>(null)
+        private set
+    var driveBusy by mutableStateOf(false)
+        private set
+    var driveBackups by mutableStateOf<
+        List<com.isecure.core.drive.DriveBackupFile>>(emptyList())
+        private set
+    var driveError by mutableStateOf<String?>(null)
+        private set
+
+    /** Strictly in memory (zero-knowledge design): every app start
+     *  begins signed out until the user taps sign-in. */
+    private var driveToken: String? = null
+
+    val driveSupported: Boolean get() = services.driveAuth != null
+    val driveSignedIn: Boolean get() = driveToken != null
+
+    private fun onDriveFailure(e: Exception) {
+        if (e is com.isecure.core.drive.DriveAuthExpiredException) {
+            driveToken = null
+            driveUser = null
+            driveBackups = emptyList()
+        }
+        driveError = e.message ?: "Google Drive request failed"
+    }
+
+    suspend fun signInToDrive() {
+        val auth = services.driveAuth ?: return
+        suppressAutoLock(180)
+        driveBusy = true
+        driveError = null
+        try {
+            val token = kotlinx.coroutines.withTimeoutOrNull(90_000) {
+                auth.authorize()
+            } ?: throw Exception("Google sign-in timed out. Please try again.")
+            driveToken = token
+            driveUser = driveService.fetchProfile(token)
+            refreshDriveBackups()
+        } catch (e: Exception) {
+            onDriveFailure(e)
+        } finally {
+            driveBusy = false
+        }
+    }
+
+    suspend fun signOutFromDrive() {
+        val token = driveToken
+        driveToken = null
+        driveUser = null
+        driveBackups = emptyList()
+        driveError = null
+        if (token != null) driveService.revoke(token)
+    }
+
+    suspend fun refreshDriveBackups() {
+        val token = driveToken ?: return
+        try {
+            driveBackups = driveService.listBackups(token)
+        } catch (e: Exception) {
+            onDriveFailure(e)
+        }
+    }
+
+    suspend fun backupToDrive() {
+        val token = driveToken ?: return
+        val envelopeJson = exportEnvelopeJson() ?: return
+        driveBusy = true
+        driveError = null
+        try {
+            driveService.uploadBackup(token, envelopeJson)
+            lastBackupTime = Clock.System.now().toString()
+            persist()
+            refreshDriveBackups()
+        } catch (e: Exception) {
+            onDriveFailure(e)
+        } finally {
+            driveBusy = false
+        }
+    }
+
+    /** The raw envelope JSON of a Drive backup, fed into the same
+     *  secret-prompted merge flow as a local file import. */
+    suspend fun downloadDriveBackup(
+        file: com.isecure.core.drive.DriveBackupFile,
+    ): String? {
+        val token = driveToken ?: return null
+        driveBusy = true
+        driveError = null
+        return try {
+            driveService.downloadBackup(token, file.id)
+        } catch (e: Exception) {
+            onDriveFailure(e)
+            null
+        } finally {
+            driveBusy = false
+        }
+    }
+
+    suspend fun deleteDriveBackup(
+        file: com.isecure.core.drive.DriveBackupFile,
+    ) {
+        val token = driveToken ?: return
+        driveBusy = true
+        driveError = null
+        try {
+            driveService.deleteBackup(token, file.id)
+            refreshDriveBackups()
+        } catch (e: Exception) {
+            onDriveFailure(e)
+        } finally {
+            driveBusy = false
+        }
+    }
+
+    // ---- In-app updates (Android) ----
+
+    var updateInfo by mutableStateOf<
+        com.isecure.core.update.UpdateInfo?>(null)
+        private set
+    var updateBusy by mutableStateOf(false)
+        private set
+    var updateProgress by mutableStateOf<Int?>(null)
+        private set
+    var updateError by mutableStateOf<String?>(null)
+        private set
+
+    val updaterSupported: Boolean get() = services.updater != null
+    val appVersion: String get() = services.updater?.currentVersion() ?: "0.1.0"
+
+    suspend fun checkForUpdate() {
+        val updater = services.updater ?: return
+        updateBusy = true
+        updateError = null
+        try {
+            updateInfo = updater.checkForUpdate()
+        } catch (e: Exception) {
+            updateError = e.message
+        } finally {
+            updateBusy = false
+        }
+    }
+
+    suspend fun downloadAndInstallUpdate() {
+        val updater = services.updater ?: return
+        val info = updateInfo ?: return
+        updateError = null
+        updateProgress = 0
+        try {
+            val path = updater.downloadAndVerify(info) { progress ->
+                updateProgress = progress
+            }
+            suppressAutoLock(180)
+            updater.install(path)
+        } catch (e: Exception) {
+            updateError = e.message ?: "Update failed"
+        } finally {
+            updateProgress = null
+        }
     }
 
     companion object {

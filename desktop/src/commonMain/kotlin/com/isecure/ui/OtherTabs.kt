@@ -34,9 +34,7 @@ import com.isecure.core.i18n.SUPPORTED_LOCALES
 import com.isecure.core.logic.PasswordGenerator
 import com.isecure.core.logic.VaultLogic
 import com.isecure.core.state.VaultAppState
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import kotlinx.datetime.Clock
 
 private val LANGUAGE_NAMES = mapOf(
@@ -316,7 +314,11 @@ fun SettingsTab(state: VaultAppState) {
     var importSecret by remember { mutableStateOf("") }
     var showImport by remember { mutableStateOf(false) }
     var importError by remember { mutableStateOf(false) }
+    var pendingImportJson by remember { mutableStateOf<String?>(null) }
     var newCategory by remember { mutableStateOf("") }
+    var showBioConfirm by remember { mutableStateOf(false) }
+    var bioSecret by remember { mutableStateOf("") }
+    var bioError by remember { mutableStateOf(false) }
 
     LazyColumn(
         Modifier.fillMaxSize().padding(16.dp),
@@ -428,6 +430,24 @@ fun SettingsTab(state: VaultAppState) {
                 )
             }
         }
+        if (state.biometricSupported) {
+            item {
+                Text(strings.biometricSetting, style = MaterialTheme.typography.titleMedium)
+                Text(
+                    strings.biometricSettingDesc,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.height(4.dp))
+                OptionSwitch(strings.biometricSetting, state.biometricEnabled) { on ->
+                    if (on) {
+                        showBioConfirm = true
+                    } else {
+                        state.disableBiometric()
+                    }
+                }
+            }
+        }
         if (state.fileExchangeAvailable) {
             item {
                 Text(strings.cloudBackupTitle, style = MaterialTheme.typography.titleMedium)
@@ -435,17 +455,170 @@ fun SettingsTab(state: VaultAppState) {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Button(onClick = {
                         val json = state.exportEnvelopeJson() ?: return@Button
-                        scope.launch {
-                            withContext(Dispatchers.IO) {
-                                state.saveBackupFile(json)
-                            }
-                        }
+                        scope.launch { state.saveBackupFile(json) }
                     }) {
                         Text(strings.cloudBackupTitle)
                     }
-                    TextButton(onClick = { showImport = true }) {
+                    TextButton(onClick = {
+                        pendingImportJson = null
+                        showImport = true
+                    }) {
                         Text(strings.restore)
                     }
+                }
+            }
+        }
+        if (state.driveSupported) {
+            item {
+                Text(strings.cloudBackupTitle, style = MaterialTheme.typography.titleMedium)
+                Text(
+                    strings.cloudBackupDesc,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.height(4.dp))
+                if (!state.driveSignedIn) {
+                    Button(
+                        onClick = { scope.launch { state.signInToDrive() } },
+                        enabled = !state.driveBusy,
+                    ) {
+                        Text("Google Drive")
+                    }
+                } else {
+                    Text(
+                        state.driveUser?.email ?: "",
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Button(
+                            onClick = { scope.launch { state.backupToDrive() } },
+                            enabled = !state.driveBusy,
+                        ) {
+                            Text(strings.cloudBackupTitle)
+                        }
+                        TextButton(
+                            onClick = { scope.launch { state.signOutFromDrive() } },
+                            enabled = !state.driveBusy,
+                        ) {
+                            Text("Sign out")
+                        }
+                    }
+                    state.lastBackupTime?.let { last ->
+                        Text(
+                            "${strings.lastBackup}: ${last.take(19)}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+                state.driveError?.let { error ->
+                    Text(
+                        error,
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+            }
+        }
+        if (state.driveSignedIn) {
+            items(state.driveBackups, key = { it.id }) { file ->
+                Card(Modifier.fillMaxWidth()) {
+                    Row(
+                        Modifier.padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(Modifier.weight(1f)) {
+                            Text(
+                                file.name,
+                                style = MaterialTheme.typography.bodyMedium,
+                            )
+                            Text(
+                                file.modifiedTime?.take(19) ?: "",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        TextButton(
+                            onClick = {
+                                scope.launch {
+                                    val json = state.downloadDriveBackup(file)
+                                    if (json != null) {
+                                        pendingImportJson = json
+                                        showImport = true
+                                    }
+                                }
+                            },
+                            enabled = !state.driveBusy,
+                        ) {
+                            Text(strings.restore)
+                        }
+                        TextButton(
+                            onClick = {
+                                scope.launch { state.deleteDriveBackup(file) }
+                            },
+                            enabled = !state.driveBusy,
+                        ) {
+                            Text(
+                                strings.deleteEntry,
+                                color = MaterialTheme.colorScheme.error,
+                            )
+                        }
+                    }
+                }
+            }
+        }
+        if (state.updaterSupported) {
+            item {
+                Text(strings.updatesTitle, style = MaterialTheme.typography.titleMedium)
+                Text(
+                    strings.updatesDesc,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    "v${state.appVersion}",
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                Spacer(Modifier.height(4.dp))
+                Button(
+                    onClick = { scope.launch { state.checkForUpdate() } },
+                    enabled = !state.updateBusy && state.updateProgress == null,
+                ) {
+                    Text(
+                        if (state.updateBusy) {
+                            strings.checkingUpdates
+                        } else {
+                            strings.checkForUpdates
+                        },
+                    )
+                }
+                state.updateInfo?.let { info ->
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        "${strings.updateAvailableMsg} v${info.version}",
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    Button(
+                        onClick = {
+                            scope.launch { state.downloadAndInstallUpdate() }
+                        },
+                        enabled = state.updateProgress == null,
+                    ) {
+                        Text(
+                            state.updateProgress?.let { "$it%" }
+                                ?: strings.downloadUpdate,
+                        )
+                    }
+                }
+                state.updateError?.let {
+                    Text(
+                        strings.updateFailedMsg,
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodySmall,
+                    )
                 }
             }
         }
@@ -463,7 +636,11 @@ fun SettingsTab(state: VaultAppState) {
 
     if (showImport) {
         AlertDialog(
-            onDismissRequest = { showImport = false; importError = false },
+            onDismissRequest = {
+                showImport = false
+                importError = false
+                pendingImportJson = null
+            },
             title = { Text(strings.restore) },
             text = {
                 Column {
@@ -487,13 +664,13 @@ fun SettingsTab(state: VaultAppState) {
             confirmButton = {
                 Button(onClick = {
                     scope.launch {
-                        val text = withContext(Dispatchers.IO) {
-                            state.openBackupFile()
-                        } ?: return@launch
+                        val text = pendingImportJson ?: state.openBackupFile()
+                            ?: return@launch
                         val ok = state.importBackup(text, importSecret)
                         if (ok) {
                             showImport = false
                             importSecret = ""
+                            pendingImportJson = null
                         } else {
                             importError = true
                         }
@@ -503,7 +680,61 @@ fun SettingsTab(state: VaultAppState) {
                 }
             },
             dismissButton = {
-                TextButton(onClick = { showImport = false }) {
+                TextButton(onClick = {
+                    showImport = false
+                    pendingImportJson = null
+                }) {
+                    Text(strings.cancel)
+                }
+            },
+        )
+    }
+
+    if (showBioConfirm) {
+        AlertDialog(
+            onDismissRequest = { showBioConfirm = false; bioError = false },
+            title = { Text(strings.biometricSetting) },
+            text = {
+                Column {
+                    Text(
+                        strings.biometricConfirmPassword,
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = bioSecret,
+                        onValueChange = { bioSecret = it; bioError = false },
+                        label = { Text(strings.masterPassword) },
+                        singleLine = true,
+                        visualTransformation = PasswordVisualTransformation(),
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    if (bioError) {
+                        Text(
+                            strings.wrongPassword,
+                            color = MaterialTheme.colorScheme.error,
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                Button(onClick = {
+                    scope.launch {
+                        val ok = state.enableBiometric(bioSecret)
+                        if (ok) {
+                            showBioConfirm = false
+                            bioSecret = ""
+                        } else {
+                            bioError = true
+                        }
+                    }
+                }) {
+                    Text(strings.save)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showBioConfirm = false }) {
                     Text(strings.cancel)
                 }
             },

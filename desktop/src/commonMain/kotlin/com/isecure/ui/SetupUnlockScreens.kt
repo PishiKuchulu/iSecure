@@ -15,6 +15,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -203,6 +204,26 @@ fun UnlockScreen(state: VaultAppState) {
                     CircularProgressIndicator(Modifier.height(18.dp))
                 } else {
                     Text(strings.unlock)
+                }
+            }
+            if (state.biometricUnlockAvailable) {
+                // One automatic prompt per lock episode, plus a manual
+                // retry button — the Capacitor edition's behavior.
+                var prompted by remember { mutableStateOf(false) }
+                LaunchedEffect(Unit) {
+                    if (!prompted) {
+                        prompted = true
+                        state.unlockWithBiometric()
+                    }
+                }
+                Spacer(Modifier.height(8.dp))
+                TextButton(
+                    onClick = {
+                        scope.launch { state.unlockWithBiometric() }
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text(strings.biometricUnlockBtn)
                 }
             }
         }

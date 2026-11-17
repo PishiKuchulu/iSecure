@@ -5,17 +5,27 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.os.Bundle
 import android.view.WindowManager
-import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.fragment.app.FragmentActivity
+import com.isecure.biometric.AndroidBiometric
+import com.isecure.core.platform.BiometricService
 import com.isecure.core.platform.ClipboardService
+import com.isecure.core.platform.DriveAuthProvider
+import com.isecure.core.platform.FileExchange
 import com.isecure.core.platform.FileVaultStore
+import com.isecure.core.platform.HttpTransport
+import com.isecure.core.platform.JvmHttpTransport
 import com.isecure.core.platform.JvmRandomSource
 import com.isecure.core.platform.PlatformKind
 import com.isecure.core.platform.PlatformServices
 import com.isecure.core.platform.RandomSource
 import com.isecure.core.platform.SettingsStore
+import com.isecure.core.platform.UpdateService
 import com.isecure.core.platform.VaultStore
+import com.isecure.drive.AndroidDriveAuth
+import com.isecure.platform.SafFileExchange
 import com.isecure.ui.ISecureApp
+import com.isecure.update.AndroidUpdater
 
 class SharedPrefsSettingsStore(context: Context) : SettingsStore {
     private val prefs =
@@ -51,27 +61,40 @@ class AndroidClipboardService(context: Context) : ClipboardService {
     }
 }
 
-class AndroidServices(context: Context) : PlatformServices {
+/**
+ * The Android platform services. The activity-bound services (Drive
+ * authorization, biometric prompt, SAF file exchange) register their
+ * activity-result launchers at construction, so this must be created
+ * in onCreate before setContent. The activity is a FragmentActivity
+ * because BiometricPrompt requires one (it still extends
+ * ComponentActivity, so setContent works unchanged).
+ */
+class AndroidServices(activity: FragmentActivity) : PlatformServices {
+    private val appContext: Context = activity.applicationContext
+
     // filesDir matches Capacitor's Directory.Data, so the vault file the
     // current app wrote (vault/pishisecure_vault_v2.json) is picked up
     // in place on upgrade.
-    override val vaultStore: VaultStore = FileVaultStore(context.filesDir)
-    override val settingsStore: SettingsStore = SharedPrefsSettingsStore(context)
-    override val clipboard: ClipboardService = AndroidClipboardService(context)
+    override val vaultStore: VaultStore = FileVaultStore(appContext.filesDir)
+    override val settingsStore: SettingsStore = SharedPrefsSettingsStore(appContext)
+    override val clipboard: ClipboardService = AndroidClipboardService(appContext)
     override val random: RandomSource = JvmRandomSource()
     override val cipher: com.isecure.core.crypto.VaultCipher =
         com.isecure.core.crypto.JvmVaultCipher
-    // SAF file picker arrives with the Android port phase.
-    override val fileExchange: com.isecure.core.platform.FileExchange? = null
+    override val fileExchange: FileExchange = SafFileExchange(activity)
+    override val httpTransport: HttpTransport = JvmHttpTransport()
+    override val driveAuth: DriveAuthProvider = AndroidDriveAuth(activity)
+    override val biometric: BiometricService = AndroidBiometric(activity)
+    override val updater: UpdateService = AndroidUpdater(appContext)
     override val platformKind: PlatformKind = PlatformKind.ANDROID
 }
 
-class MainActivity : ComponentActivity() {
+class MainActivity : FragmentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         // Same always-on screenshot protection as the Capacitor build.
         window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
-        val services = AndroidServices(applicationContext)
+        val services = AndroidServices(this)
         setContent {
             ISecureApp(services)
         }

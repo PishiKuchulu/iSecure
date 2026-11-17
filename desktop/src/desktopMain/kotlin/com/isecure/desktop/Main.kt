@@ -14,6 +14,8 @@ import com.isecure.core.platform.RandomSource
 import com.isecure.core.platform.SettingsStore
 import com.isecure.core.platform.VaultStore
 import com.isecure.ui.ISecureApp
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import java.awt.Toolkit
 import java.awt.datatransfer.DataFlavor
 import java.awt.datatransfer.StringSelection
@@ -61,22 +63,25 @@ class AwtClipboardService : ClipboardService {
 }
 
 class SwingFileExchange : com.isecure.core.platform.FileExchange {
-    override fun saveTextFile(suggestedName: String, content: String): Boolean {
+    override suspend fun saveTextFile(
+        suggestedName: String,
+        content: String,
+    ): Boolean = withContext(Dispatchers.IO) {
         val chooser = javax.swing.JFileChooser()
         chooser.selectedFile = File(suggestedName)
         if (chooser.showSaveDialog(null) != javax.swing.JFileChooser.APPROVE_OPTION) {
-            return false
+            return@withContext false
         }
         chooser.selectedFile.writeText(content, Charsets.UTF_8)
-        return true
+        true
     }
 
-    override fun openTextFile(): String? {
+    override suspend fun openTextFile(): String? = withContext(Dispatchers.IO) {
         val chooser = javax.swing.JFileChooser()
         if (chooser.showOpenDialog(null) != javax.swing.JFileChooser.APPROVE_OPTION) {
-            return null
+            return@withContext null
         }
-        return chooser.selectedFile.readText(Charsets.UTF_8)
+        chooser.selectedFile.readText(Charsets.UTF_8)
     }
 }
 
@@ -90,6 +95,14 @@ class DesktopServices(baseDir: File) : PlatformServices {
         com.isecure.core.crypto.JvmVaultCipher
     override val fileExchange: com.isecure.core.platform.FileExchange =
         SwingFileExchange()
+    override val httpTransport: com.isecure.core.platform.HttpTransport =
+        com.isecure.core.platform.JvmHttpTransport()
+    // Desktop Drive sign-in (system browser + loopback OAuth) and the
+    // desktop updater arrive in the desktop phase; the sections stay
+    // hidden while these are null.
+    override val driveAuth: com.isecure.core.platform.DriveAuthProvider? = null
+    override val biometric: com.isecure.core.platform.BiometricService? = null
+    override val updater: com.isecure.core.platform.UpdateService? = null
     override val platformKind: PlatformKind = PlatformKind.DESKTOP
 }
 
