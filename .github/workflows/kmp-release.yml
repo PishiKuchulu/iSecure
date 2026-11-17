@@ -1,0 +1,119 @@
+name: KMP Release (Kotlin edition)
+
+# Publishes the Kotlin/Compose Multiplatform Android edition. Manual
+# dispatch only: the Capacitor chain (release.yml) stays the owner of
+# push-triggered builds, and a Kotlin release is a deliberate act.
+# The release flows into the Cloudflare update feed automatically
+# (the worker serves the highest strict-semver release), so installed
+# 1.0.5 clients are offered 2.0.0 in-app; same applicationId, same
+# signer and the same vault file path make the upgrade in-place.
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to publish (must match desktop/build.gradle.kts)'
+        type: string
+        default: '2.0.0'
+
+permissions:
+  contents: write
+
+jobs:
+  kmp-release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Setup Android SDK
+        run: |
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-35" "build-tools;35.0.0"
+
+      # Same wrapped keystore + dedicated passphrase secret as the
+      # Capacitor workflow (AUD-001).
+      - name: Decrypt keystore
+        env:
+          ISECURE_ENC_PASSPHRASE: ${{ secrets.ISECURE_ENC_PASSPHRASE }}
+        run: |
+          openssl enc -d -aes-256-cbc -salt -pbkdf2 -md sha256 -in keystore.enc -out "$RUNNER_TEMP/release.p12" -pass env:ISECURE_ENC_PASSPHRASE
+          sha256sum "$RUNNER_TEMP/release.p12"
+
+      - name: KMP tests (desktop target)
+        working-directory: desktop
+        run: |
+          chmod +x gradlew
+          ./gradlew desktopTest --no-daemon
+
+      - name: Build signed KMP release APK
+        working-directory: desktop
+        env:
+          ISECURE_KEYSTORE_FILE: ${{ runner.temp }}/release.p12
+          ISECURE_KEYSTORE_PASSWORD: ${{ secrets.ISECURE_KEYSTORE_PASSWORD }}
+          ISECURE_KEY_ALIAS: ${{ secrets.ISECURE_KEY_ALIAS }}
+          ISECURE_KEY_PASSWORD: ${{ secrets.ISECURE_KEY_PASSWORD }}
+        run: ./gradlew assembleRelease --no-daemon
+
+      - name: Verify version + signer and stage APK
+        run: |
+          VERSION="${{ inputs.version }}"
+          GRADLE_VERSION=$(grep -oP 'versionName "\K[^"]+' desktop/build.gradle.kts)
+          if [ "$VERSION" != "$GRADLE_VERSION" ]; then
+            echo "Dispatch version $VERSION != build.gradle.kts $GRADLE_VERSION"
+            exit 1
+          fi
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+          APK=$(find desktop/build/outputs/apk/release -name '*-release.apk' | head -1)
+          echo "Built APK: $APK"
+          APKSIGNER=$(find "$ANDROID_HOME/build-tools" -name apksigner | sort | tail -1)
+          "$APKSIGNER" verify --print-certs "$APK" | tee certs.txt
+          grep -q "f411316843add5339f1994f23c903b63b65a5cdd4e5d55d595bbe0bcbbd7439b" certs.txt || {
+            echo "Signer is NOT the shared release key — refusing to publish."
+            exit 1
+          }
+          cp "$APK" "iSecure-$VERSION-release.apk"
+          sha256sum "iSecure-$VERSION-release.apk" > "iSecure-$VERSION-release.apk.sha256"
+          cat "iSecure-$VERSION-release.apk.sha256"
+
+      # Same AUD-005 rule as the Capacitor chain: one version, one
+      # immutable artifact set.
+      - name: Gate re-publishing an existing version
+        id: gate
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "v${{ inputs.version }}" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "v${{ inputs.version }} is already published — publish step skipped."
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Publish GitHub Release
+        if: steps.gate.outputs.skip != 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ env.VERSION }}
+          name: iSecure v${{ env.VERSION }}
+          files: |
+            iSecure-${{ env.VERSION }}-release.apk
+            iSecure-${{ env.VERSION }}-release.apk.sha256
+          body: |
+            iSecure 2.0.0 — the Kotlin / Compose Multiplatform edition.
+
+            This release replaces the Capacitor build in place: same
+            applicationId (com.isecure.app), same release signer, and
+            the same vault file, so the in-app update from 1.0.5 keeps
+            the vault untouched. The Android app is now fully native
+            Kotlin sharing one codebase with the desktop edition:
+            native Google Drive backup (Authorization API), fingerprint
+            unlock (Keystore + BiometricPrompt), the feed-based in-app
+            updater, and SAF backup export/import.
+
+            Signed with the shared Anvex/MarbleMD release key,
+            cert SHA-256 f411316843add5339f1994f23c903b63b65a5cdd4e5d55d595bbe0bcbbd7439b.
