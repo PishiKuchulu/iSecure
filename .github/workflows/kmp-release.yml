@@ -62,7 +62,7 @@ jobs:
       - name: Verify version + signer and stage APK
         run: |
           VERSION="${{ inputs.version }}"
-          GRADLE_VERSION=$(grep -oP 'versionName "\K[^"]+' desktop/build.gradle.kts)
+          GRADLE_VERSION=$(grep -oP 'versionName\s*=\s*"\K[^"]+' desktop/build.gradle.kts)
           if [ "$VERSION" != "$GRADLE_VERSION" ]; then
             echo "Dispatch version $VERSION != build.gradle.kts $GRADLE_VERSION"
             exit 1
