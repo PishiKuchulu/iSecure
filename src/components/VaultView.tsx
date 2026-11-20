@@ -308,7 +308,7 @@ export default function VaultView({
   return (
     <div className="grid grid-cols-1 lg:grid-cols-12 gap-6" id="vault_view_workspace">
       {/* 1. SIDEBAR NAVIGATION */}
-      <div className="lg:col-span-3 space-y-4">
+      <div className="lg:col-span-3 space-y-4 order-2 lg:order-none">
         <button
           type="button"
           onClick={handleOpenAddForm}
@@ -411,7 +411,7 @@ export default function VaultView({
             </form>
           )}
 
-          <div className="space-y-0.5 max-h-56 overflow-y-auto">
+          <div className="space-y-0.5 lg:max-h-56 lg:overflow-y-auto">
             {allCategories.map(cat => {
               const count = entries.filter(e => !e.isTrash && e.category.toLowerCase() === cat.toLowerCase()).length;
               return (
@@ -439,7 +439,7 @@ export default function VaultView({
       </div>
 
       {/* 2. MAIN PASSWORDS LISTING */}
-      <div className="lg:col-span-5 flex flex-col gap-4">
+      <div className="lg:col-span-5 flex flex-col gap-4 order-1 lg:order-none">
         <div className="relative">
           <Search className="absolute start-3 top-2.5 w-4 h-4 text-gray-400" />
           <input
@@ -467,7 +467,7 @@ export default function VaultView({
           </div>
         )}
 
-        <div className="flex-1 space-y-2 max-h-[500px] overflow-y-auto pe-1">
+        <div className="flex-1 space-y-2 pe-1 lg:max-h-[500px] lg:overflow-y-auto">
           {filteredEntries.length === 0 ? (
             <div className="py-16 text-center text-xs text-gray-400 bg-white dark:bg-zinc-950 border border-dashed border-gray-200 dark:border-zinc-800 rounded-2xl">
               {strings.noEntries}
@@ -514,7 +514,7 @@ export default function VaultView({
       </div>
 
       {/* 3. ITEM DETAILED SECTIONS CARD */}
-      <div className="lg:col-span-4" id="details_section_panel">
+      <div className="lg:col-span-4 order-3 lg:order-none" id="details_section_panel">
         {selectedEntry ? (
           <div className="p-5 bg-white dark:bg-zinc-950 border border-gray-200 dark:border-zinc-800 rounded-2xl space-y-5 flex flex-col justify-between">
             <div>

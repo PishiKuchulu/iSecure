@@ -7,7 +7,7 @@ import React, { useState, useEffect, useRef, useCallback, lazy, Suspense } from 
 import { motion, AnimatePresence } from 'motion/react';
 import {
   Key, Shield, AlertTriangle, Settings, Eye, EyeOff,
-  LogOut, Layers, LayoutDashboard, Database, Lock, RotateCcw, ArrowUpCircle,
+  LogOut, Layers, LayoutDashboard, Lock, RotateCcw, ArrowUpCircle,
   Fingerprint
 } from 'lucide-react';
 import { VaultEntry, UserSettings } from './types';
@@ -69,7 +69,6 @@ const VaultView = lazy(() => import('./components/VaultView'));
 const GeneratorView = lazy(() => import('./components/GeneratorView'));
 const SecurityView = lazy(() => import('./components/SecurityView'));
 const SettingsView = lazy(() => import('./components/SettingsView'));
-const BlueprintsView = lazy(() => import('./components/BlueprintsView'));
 
 const LOCAL_STORAGE_KEY_SETTINGS = 'pishisecure_settings_v1';
 
@@ -1466,9 +1465,7 @@ export default function App() {
               <div className="max-w-7xl mx-auto flex flex-col md:flex-row md:items-center justify-between gap-4">
                 {/* Brand */}
                 <div className="flex items-center gap-3">
-                  <div className="w-9 h-9 bg-gray-900 dark:bg-white text-white dark:text-gray-900 rounded-xl flex items-center justify-center font-black text-xs italic shadow-sm flex-shrink-0">
-                    iS
-                  </div>
+                  <img src="/icon.png" alt="" className="w-9 h-9 rounded-xl shadow-sm flex-shrink-0" />
                   <div>
                     <h1 className="text-sm font-black text-gray-950 dark:text-white flex items-center gap-1.5 leading-tight">
                       {strings.appName}
@@ -1488,7 +1485,6 @@ export default function App() {
                     { id: 'generator', label: strings.generator, icon: <Layers className="w-3.5 h-3.5" /> },
                     { id: 'audit', label: strings.auditTitle, icon: <Shield className="w-3.5 h-3.5" /> },
                     { id: 'settings', label: strings.settingsTitle, icon: <Settings className="w-3.5 h-3.5" /> },
-                    { id: 'blueprints', label: strings.blueprintsTitle, icon: <Database className="w-3.5 h-3.5" /> },
                   ].map(tab => (
                     <button
                       type="button"
@@ -1656,7 +1652,7 @@ export default function App() {
                       />
                     )}
 
-                    {activeTab === 'blueprints' && <BlueprintsView />}
+                    {/* Blueprints tab removed in 2.0.6 (AI Studio template filler, owner order). */}
                   </motion.div>
                 </AnimatePresence>
               </Suspense>

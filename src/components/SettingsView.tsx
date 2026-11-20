@@ -692,14 +692,27 @@ export default function SettingsView({
             <label className="text-[10px] font-mono text-gray-400 uppercase block">
               Restore from Local Encrypted File
             </label>
+            {/* The native file input renders as an unstyled web widget in the
+                WebView, so it stays hidden behind a styled button + file name. */}
             <input
               ref={fileInputRef}
               type="file"
               accept=".json,.pishivault"
-              onClick={() => onFilePickerOpen?.()}
               onChange={(e) => setSelectedFile(e.target.files?.[0] ?? null)}
-              className="w-full text-[11px] text-gray-500 file:me-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-gray-100 dark:file:bg-zinc-800 file:text-gray-700 dark:file:text-zinc-200 cursor-pointer"
+              className="hidden"
             />
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={() => { onFilePickerOpen?.(); fileInputRef.current?.click(); }}
+                className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-gray-100 hover:bg-gray-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-gray-700 dark:text-zinc-200 transition cursor-pointer flex-shrink-0"
+              >
+                Choose File
+              </button>
+              <span className="text-[11px] text-gray-500 truncate">
+                {selectedFile ? selectedFile.name : 'No file chosen'}
+              </span>
+            </div>
             {selectedFile && (
               <>
                 <input

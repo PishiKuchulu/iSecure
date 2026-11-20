@@ -373,7 +373,7 @@ export default function DashboardView({
         </div>
         <button
           type="button"
-          onClick={() => onNavigate('blueprints')}
+          onClick={() => onNavigate('settings')}
           className="px-3 py-1.5 bg-white text-gray-900 rounded-lg text-[10px] font-bold hover:bg-gray-100 transition cursor-pointer flex-shrink-0"
         >
           View Specs

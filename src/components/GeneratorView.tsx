@@ -139,17 +139,19 @@ export default function GeneratorView({ strings, clipboardClearSeconds }: Genera
       </div>
 
       {/* Generated Result display bar */}
-      <div className="relative mb-6 p-4 bg-gray-50 dark:bg-zinc-900 rounded-2xl border border-gray-200 dark:border-zinc-800 flex items-center justify-between gap-4">
-        <input
-          type="text"
-          readOnly
-          aria-label={strings.password}
-          value={genError || generatedPassword}
-          className={`w-full bg-transparent font-mono text-sm sm:text-base tracking-wide select-all outline-none ${
-            genError ? 'text-rose-500 font-semibold text-xs' : 'text-gray-900 dark:text-white'
-          }`}
-        />
-        <div className="flex items-center gap-2 flex-shrink-0">
+      <div className="relative mb-6 p-4 bg-gray-50 dark:bg-zinc-900 rounded-2xl border border-gray-200 dark:border-zinc-800">
+        <div className="flex items-start justify-between gap-4">
+          {/* Wrapping text block, not a single-line input: a long generated
+              password must stay fully visible instead of clipping its tail. */}
+          <div
+            aria-label={strings.password}
+            className={`min-w-0 flex-1 font-mono text-sm sm:text-base tracking-wide select-all break-all ${
+              genError ? 'text-rose-500 font-semibold text-xs' : 'text-gray-900 dark:text-white'
+            }`}
+          >
+            {genError || generatedPassword}
+          </div>
+          <div className="flex items-center gap-2 flex-shrink-0">
           <button
             type="button"
             onClick={triggerGeneration}
@@ -173,6 +175,7 @@ export default function GeneratorView({ strings, clipboardClearSeconds }: Genera
             {isCopied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
             {isCopied ? 'Copied' : strings.copy}
           </button>
+          </div>
         </div>
         {copyError && (
           <p className="text-[11px] text-rose-500 font-bold mt-2">{copyError}</p>
@@ -286,7 +289,7 @@ export default function GeneratorView({ strings, clipboardClearSeconds }: Genera
           />
           <div>
             <p className="text-xs font-semibold text-gray-700 dark:text-zinc-300">{strings.genExcludeSimilar}</p>
-            <p className="text-[10px] text-gray-400 mt-0.5">Cleans up high-risk character confusions like (l, 1, I, o, 0, O)</p>
+            <p className="text-[10px] text-gray-400 mt-0.5">Cleans up high-risk character confusions like (l, o, I, O, 0, 1)</p>
           </div>
         </label>
       </div>

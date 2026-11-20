@@ -26,7 +26,6 @@ import {
   purgeExpiredTrashEntries,
 } from '../utils';
 import { localesMap } from '../locales';
-import { blueprints } from '../blueprints';
 import { VaultEntry } from '../types';
 
 function makeEntry(overrides: Partial<VaultEntry> = {}): VaultEntry {
@@ -206,14 +205,6 @@ test('locales: all 11 locales share identical key sets and proper RTL/script inv
   assert.equal(localesMap.ar.isRTL, true);
   assert.equal(localesMap.en.isRTL, false);
   assert.ok(!/[\u0590-\u05FF]/.test(localesMap.ar.launch), 'Arabic launch string must not contain Hebrew');
-});
-
-test('blueprints: SQL schema comments out ERD block cleanly', () => {
-  const sqlArtifact = blueprints.find(b => b.language === 'sql');
-  assert.ok(sqlArtifact);
-  const erdLines = sqlArtifact.content.split('\n').filter(line => line.includes('[ custom_fields ]') || line.includes('[ entry_tags ]'));
-  assert.equal(erdLines.length, 2);
-  erdLines.forEach(line => assert.ok(line.startsWith('--'), `Uncommented ERD line: ${line}`));
 });
 
 import {
