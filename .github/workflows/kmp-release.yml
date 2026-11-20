@@ -3,10 +3,16 @@ name: KMP Release (Kotlin edition)
 # Publishes the Kotlin/Compose Multiplatform Android edition. Manual
 # dispatch only: the Capacitor chain (release.yml) stays the owner of
 # push-triggered builds, and a Kotlin release is a deliberate act.
-# The release flows into the Cloudflare update feed automatically
-# (the worker serves the highest strict-semver release), so installed
-# 1.0.5 clients are offered 2.0.0 in-app; same applicationId, same
-# signer and the same vault file path make the upgrade in-place.
+#
+# HISTORY: the 2.0.0 Kotlin release (2026-11-18) was rolled back the
+# same night on the owner's UI verdict — its release and tag were
+# deleted and the Capacitor edition was re-issued over it. The Kotlin
+# edition must not be re-released until its UI reaches visual parity
+# with the Capacitor design and the owner approves it. The default
+# version below tracks the shipped edition's metadata (AUD-021) so an
+# accidental dispatch builds the current version — whose tag already
+# exists, so the publish gate skips it — instead of resurrecting a
+# rolled-back tag.
 
 on:
   workflow_dispatch:
@@ -14,7 +20,7 @@ on:
       version:
         description: 'Version to publish (must match desktop/build.gradle.kts)'
         type: string
-        default: '2.0.0'
+        default: '2.0.3'
 
 permissions:
   contents: write
