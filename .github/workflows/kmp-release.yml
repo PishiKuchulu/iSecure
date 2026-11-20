@@ -20,7 +20,7 @@ on:
       version:
         description: 'Version to publish (must match desktop/build.gradle.kts)'
         type: string
-        default: '2.0.6'
+        default: '2.0.7'
 
 permissions:
   contents: write
