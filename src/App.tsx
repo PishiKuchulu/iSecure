@@ -84,14 +84,17 @@ const DEFAULT_SETTINGS: UserSettings = {
   language: 'en',
   autoLockMinutes: 5,
   clipboardClearSeconds: 30,
-  // Owner order 2026-11-20: screenshots fully open so issues can be
-  // reported with pictures. Protection is opt-in via Settings.
-  screenshotProtection: false,
+  // Owner order 2026-11-20 (evening): the screenshot review round is
+  // done, so protection is on by default again. The Settings toggle can
+  // still open screenshots whenever they are needed for a report.
+  screenshotProtection: true,
 };
 
-// One-time migration marker: existing installs stored the old
-// protection-on default; the migration below turns it off exactly once.
+// One-time migration markers for the screenshot-protection flips:
+// 'opened' shipped in 2.0.5 (screenshots open for the review round);
+// 'closed' ships in 2.0.7 and re-enables protection exactly once.
 const SCREENSHOT_OPEN_MIGRATION_KEY = 'isecure_screenshots_opened_v1';
+const SCREENSHOT_CLOSE_MIGRATION_KEY = 'isecure_screenshots_closed_v1';
 
 const VALID_THEMES: ReadonlySet<UserSettings['theme']> = new Set(['light', 'dark', 'amoled', 'system']);
 const VALID_AUTOLOCK = new Set([0, 1, 5, 15, 30]);
@@ -245,16 +248,17 @@ export default function App() {
     const parsed = existing
       ? parseValidatedSettings(existing)
       : parseValidatedSettings(localStorage.getItem('secure_vault_settings_v1'));
-    // One-time migration (owner order 2026-11-20): open screenshots on
-    // existing installs too, not just fresh ones — the stored settings
-    // still carry the old protection-on default. Runs exactly once; the
-    // Settings toggle can re-enable protection at any time afterwards.
+    // One-time migration (owner order 2026-11-20, evening): the review
+    // round is over, so re-enable screenshot protection on existing
+    // installs too — 2.0.5's migration had turned it off and the stored
+    // settings still carry that. Runs exactly once (marker below); the
+    // Settings toggle can open screenshots again at any time afterwards.
     try {
-      if (!localStorage.getItem(SCREENSHOT_OPEN_MIGRATION_KEY)) {
-        localStorage.setItem(SCREENSHOT_OPEN_MIGRATION_KEY, '1');
-        const opened = { ...parsed, screenshotProtection: false };
-        localStorage.setItem(LOCAL_STORAGE_KEY_SETTINGS, JSON.stringify(opened));
-        return opened;
+      if (!localStorage.getItem(SCREENSHOT_CLOSE_MIGRATION_KEY)) {
+        localStorage.setItem(SCREENSHOT_CLOSE_MIGRATION_KEY, '1');
+        const closed = { ...parsed, screenshotProtection: true };
+        localStorage.setItem(LOCAL_STORAGE_KEY_SETTINGS, JSON.stringify(closed));
+        return closed;
       }
     } catch {
       // Storage unavailable: fall through with the parsed settings.

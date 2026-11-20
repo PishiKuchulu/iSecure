@@ -80,10 +80,10 @@ android {
         // Version metadata tracks the shipped edition (AUD-021): the
         // Kotlin edition is the same app identity and must never carry
         // a versionCode the shipped build has already passed. Kept in
-        // lockstep with the Capacitor build at 2.0.6 / 13; a future
+        // lockstep with the Capacitor build at 2.0.7 / 14; a future
         // Kotlin release bumps both fields past the shipped values.
-        versionCode = 13
-        versionName = "2.0.6"
+        versionCode = 14
+        versionName = "2.0.7"
     }
     if (kmpKeystoreFile != null) {
         signingConfigs {

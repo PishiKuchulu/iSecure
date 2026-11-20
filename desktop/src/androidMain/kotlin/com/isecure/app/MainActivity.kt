@@ -4,6 +4,7 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.os.Bundle
+import android.view.WindowManager
 import androidx.activity.compose.setContent
 import androidx.fragment.app.FragmentActivity
 import com.isecure.biometric.AndroidBiometric
@@ -91,9 +92,14 @@ class AndroidServices(activity: FragmentActivity) : PlatformServices {
 class MainActivity : FragmentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        // Screenshots open (owner order 2026-11-20, same as the shipped
-        // Capacitor build): no FLAG_SECURE. Protection can return as an
-        // opt-in setting with the parity UI work.
+        // Screenshot protection on (owner order 2026-11-20, evening —
+        // closing the review round that had screenshots open in
+        // 2.0.5/2.0.6): block screenshots and screen recording at the
+        // window level, as the shipped Capacitor build does.
+        window.setFlags(
+            WindowManager.LayoutParams.FLAG_SECURE,
+            WindowManager.LayoutParams.FLAG_SECURE,
+        )
         val services = AndroidServices(this)
         setContent {
             ISecureApp(services)
