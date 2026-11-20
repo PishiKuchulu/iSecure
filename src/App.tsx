@@ -85,8 +85,14 @@ const DEFAULT_SETTINGS: UserSettings = {
   language: 'en',
   autoLockMinutes: 5,
   clipboardClearSeconds: 30,
-  screenshotProtection: true,
+  // Owner order 2026-11-20: screenshots fully open so issues can be
+  // reported with pictures. Protection is opt-in via Settings.
+  screenshotProtection: false,
 };
+
+// One-time migration marker: existing installs stored the old
+// protection-on default; the migration below turns it off exactly once.
+const SCREENSHOT_OPEN_MIGRATION_KEY = 'isecure_screenshots_opened_v1';
 
 const VALID_THEMES: ReadonlySet<UserSettings['theme']> = new Set(['light', 'dark', 'amoled', 'system']);
 const VALID_AUTOLOCK = new Set([0, 1, 5, 15, 30]);
@@ -237,9 +243,24 @@ export default function App() {
   // Settings persisted outside vault (non-sensitive UI preferences)
   const [settings, setSettings] = useState<UserSettings>(() => {
     const existing = localStorage.getItem(LOCAL_STORAGE_KEY_SETTINGS);
-    if (existing) return parseValidatedSettings(existing);
-    const legacy = localStorage.getItem('secure_vault_settings_v1');
-    return parseValidatedSettings(legacy);
+    const parsed = existing
+      ? parseValidatedSettings(existing)
+      : parseValidatedSettings(localStorage.getItem('secure_vault_settings_v1'));
+    // One-time migration (owner order 2026-11-20): open screenshots on
+    // existing installs too, not just fresh ones — the stored settings
+    // still carry the old protection-on default. Runs exactly once; the
+    // Settings toggle can re-enable protection at any time afterwards.
+    try {
+      if (!localStorage.getItem(SCREENSHOT_OPEN_MIGRATION_KEY)) {
+        localStorage.setItem(SCREENSHOT_OPEN_MIGRATION_KEY, '1');
+        const opened = { ...parsed, screenshotProtection: false };
+        localStorage.setItem(LOCAL_STORAGE_KEY_SETTINGS, JSON.stringify(opened));
+        return opened;
+      }
+    } catch {
+      // Storage unavailable: fall through with the parsed settings.
+    }
+    return parsed;
   });
 
   // Volatile Google Drive Auth & Backup state (access token stored strictly in memory)

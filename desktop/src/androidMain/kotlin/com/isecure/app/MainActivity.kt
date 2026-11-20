@@ -4,7 +4,6 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.os.Bundle
-import android.view.WindowManager
 import androidx.activity.compose.setContent
 import androidx.fragment.app.FragmentActivity
 import com.isecure.biometric.AndroidBiometric
@@ -92,8 +91,9 @@ class AndroidServices(activity: FragmentActivity) : PlatformServices {
 class MainActivity : FragmentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        // Same always-on screenshot protection as the Capacitor build.
-        window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
+        // Screenshots open (owner order 2026-11-20, same as the shipped
+        // Capacitor build): no FLAG_SECURE. Protection can return as an
+        // opt-in setting with the parity UI work.
         val services = AndroidServices(this)
         setContent {
             ISecureApp(services)
