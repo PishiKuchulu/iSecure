@@ -77,11 +77,13 @@ android {
         applicationId = "com.isecure.app"
         minSdk = 23
         targetSdk = 35
-        // 2.0.0 is the Kotlin edition replacing the Capacitor build in
-        // place: versionCode must exceed 1.0.5's 6 for the in-app
-        // update to install over it.
-        versionCode = 7
-        versionName = "2.0.0"
+        // Version metadata tracks the shipped edition (AUD-021): the
+        // Kotlin edition is the same app identity and must never carry
+        // a versionCode the shipped build has already passed. Kept in
+        // lockstep with the Capacitor build at 2.0.3 / 10; a future
+        // Kotlin release bumps both fields past the shipped values.
+        versionCode = 10
+        versionName = "2.0.3"
     }
     if (kmpKeystoreFile != null) {
         signingConfigs {

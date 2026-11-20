@@ -12,6 +12,7 @@ import androidx.core.content.FileProvider
 import com.isecure.core.platform.HttpTransport
 import com.isecure.core.platform.InstallResult
 import com.isecure.core.platform.JvmHttpTransport
+import com.isecure.core.platform.UpdateCheckResult
 import com.isecure.core.platform.UpdateService
 import com.isecure.core.update.UpdateFeed
 import com.isecure.core.update.UpdateInfo
@@ -46,14 +47,27 @@ class AndroidUpdater(private val context: Context) : UpdateService {
         "0.0.0"
     }
 
-    override suspend fun checkForUpdate(): UpdateInfo? {
+    override suspend fun checkForUpdate(): UpdateCheckResult {
+        // AUD-017: failures are reported, never collapsed into a null
+        // that the UI cannot distinguish from "no update available".
         val res = try {
             transport.request("GET", UpdateFeed.MANIFEST_URL)
         } catch (e: Exception) {
-            return null
+            return UpdateCheckResult.Failed(e.message)
         }
-        if (res.status !in 200..299) return null
-        return UpdateFeed.availableUpdate(res.body, currentVersion())
+        if (res.status !in 200..299) {
+            return UpdateCheckResult.Failed(
+                "Update feed returned HTTP ${res.status}",
+            )
+        }
+        UpdateFeed.parseManifest(res.body)
+            ?: return UpdateCheckResult.Failed("Update feed manifest was invalid")
+        val available = UpdateFeed.availableUpdate(res.body, currentVersion())
+        return if (available != null) {
+            UpdateCheckResult.Available(available)
+        } else {
+            UpdateCheckResult.UpToDate
+        }
     }
 
     override suspend fun downloadAndVerify(

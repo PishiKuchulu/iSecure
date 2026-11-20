@@ -20,7 +20,7 @@ Originally a React 19 + TypeScript + Vite web app, packaged as a **native Androi
 * 🚫 **OS-level screen protection** — `FLAG_SECURE` blocks screenshots, screen recording and recent-apps thumbnails. Secure by default, with a real in-app toggle.
 * ⏱️ **Locks the moment you leave** — going to background instantly locks the vault and clears decrypted state, on top of the inactivity auto-lock.
 * 📋 **Smart clipboard hygiene** — copied passwords auto-clear after a timeout; the clear only fires if the clipboard still holds *your* copied value, and locking the vault clears it too. Copy failures are reported honestly.
-* 💾 **Crash-proof atomic writes** — the vault is written to a temp file and renamed over the old one. A crash mid-save can never truncate your only copy.
+* 💾 **Atomic writes with crash recovery** — the vault is written to a temp file and renamed over the old one, and the load path recovers the staged copy if a crash lands mid-rename. A crash mid-save can never truncate your only copy.
 * 🧯 **Corrupt-vault recovery** — a damaged vault is never silently overwritten: you get a recovery screen with a raw (still encrypted) download, or a two-step confirmed erase.
 * 📵 **No Android Auto Backup leakage** — `allowBackup=false`. The only sanctioned backup paths are your own Google Drive and encrypted file export.
 * 🧪 **Forensically audited** — two external audit waves (P-01..P-04 and AUD-001..013), all findings fixed and verified; CI gates every release on tests + type checks.
@@ -56,7 +56,7 @@ bun run build
 cd android && ./gradlew assembleDebug   # or assembleRelease with your keystore
 ```
 
-Every push to `main` builds the signed APK in CI (tests + type check gated) and publishes it to Releases. 🤖
+Every push to `main` builds the signed APK in CI (tests + type check gated); a release is published whenever the version changes. 🤖
 
 ---
 
@@ -75,7 +75,7 @@ Every push to `main` builds the signed APK in CI (tests + type check gated) and 
 * 🚫 **محافظت صفحه در سطح سیستم‌عامل** — `FLAG_SECURE` جلوی اسکرین‌شات، ضبط صفحه و تصویر بندانگشتی برنامه‌های اخیر را می‌گیرد؛ پیش‌فرض روشن، با کلید واقعی داخل برنامه.
 * ⏱️ **قفل فوری هنگام خروج** — به محض رفتن به پس‌زمینه، گاوصندوق قفل و حالت رمزگشایی‌شده پاک می‌شود؛ علاوه بر قفل خودکارِ بی‌تحرکی.
 * 📋 **کلیپ‌بورد بهداشتی** — رمز کپی‌شده بعد از زمان مشخص خودکار پاک می‌شود؛ پاک‌سازی فقط وقتی انجام می‌شود که کلیپ‌بورد هنوز همان مقدارِ کپی‌شده‌ی برنامه را داشته باشد، و قفل شدن گاوصندوق هم آن را پاک می‌کند. خطای کپی صادقانه گزارش می‌شود.
-* 💾 **نوشتن اتمیک و ضدکرش** — گاوصندوق اول در فایل موقت نوشته و سپس جایگزین می‌شود؛ کرش وسط ذخیره هرگز تنها نسخه‌ی شما را خراب نمی‌کند.
+* 💾 **نوشتن اتمیک با بازیابی هنگام کرش** — گاوصندوق اول در فایل موقت نوشته و سپس جایگزین می‌شود و اگر کرش دقیقاً وسط جایگزینی رخ دهد، موقع باز شدن همان نسخه‌ی موقت بازیابی می‌شود؛ کرش وسط ذخیره هرگز تنها نسخه‌ی شما را خراب نمی‌کند.
 * 🧯 **بازیابی گاوصندوق خراب** — گاوصندوق آسیب‌دیده هرگز بی‌صدا بازنویسی نمی‌شود: صفحه‌ی بازیابی با دانلود خام (همچنان رمزنگاری‌شده) یا پاک‌سازی دومرحله‌ای با تأیید.
 * 📵 **بدون نشت از Auto Backup اندروید** — `allowBackup=false`. تنها مسیرهای مجاز بکاپ: گوگل درایو خودتان و خروجی فایل رمزنگاری‌شده.
 * 🧪 **ممیزی فارنزیک‌شده** — دو موج ممیزی خارجی (P-01..P-04 و AUD-001..013)؛ همه‌ی یافته‌ها رفع و راستی‌آزمایی شده‌اند و CI هر ریلیز را به تست و type-check گیت می‌کند.
@@ -108,7 +108,7 @@ bun run build
 cd android && ./gradlew assembleDebug
 ```
 
-هر push به `main` در CI، APK امضاشده را می‌سازد (گیت‌شده با تست و type-check) و در Releases منتشر می‌کند. 🤖
+هر push به `main` در CI، APK امضاشده را می‌سازد (گیت‌شده با تست و type-check) و با هر تغییر نسخه، یک ریلیز تازه در Releases منتشر می‌شود. 🤖
 
 </div>
 

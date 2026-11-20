@@ -1,6 +1,9 @@
 package com.isecure.core.platform
 
 import java.io.File
+import java.nio.file.AtomicMoveNotSupportedException
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
 import java.security.SecureRandom
 import java.util.Properties
 
@@ -23,17 +26,34 @@ class FileVaultStore(private val baseDir: File) : VaultStore {
 
     override fun writeText(text: String) {
         vaultFile.parentFile?.mkdirs()
-        // Write-then-rename so a crash mid-write cannot truncate the vault.
+        // Write-then-move so a crash mid-write cannot truncate the vault.
+        // Files.move with ATOMIC_MOVE replaces the destination atomically
+        // on the same filesystem — including on Windows, where
+        // File.renameTo refuses to replace an existing file and the old
+        // fallback (a direct overwrite of the only vault copy) was the
+        // routine path (AUD-016). There is deliberately no overwrite
+        // fallback: if the move fails, the exception propagates (callers
+        // surface it as a persist error) and the old vault file is left
+        // untouched.
         val tmp = File(vaultFile.parentFile, vaultFile.name + ".tmp")
         tmp.writeText(text, Charsets.UTF_8)
-        if (!tmp.renameTo(vaultFile)) {
-            vaultFile.writeText(text, Charsets.UTF_8)
-            tmp.delete()
+        try {
+            Files.move(
+                tmp.toPath(), vaultFile.toPath(),
+                StandardCopyOption.ATOMIC_MOVE,
+                StandardCopyOption.REPLACE_EXISTING,
+            )
+        } catch (e: AtomicMoveNotSupportedException) {
+            Files.move(
+                tmp.toPath(), vaultFile.toPath(),
+                StandardCopyOption.REPLACE_EXISTING,
+            )
         }
     }
 
     override fun delete() {
         vaultFile.delete()
+        File(vaultFile.parentFile, vaultFile.name + ".tmp").delete()
     }
 }
 

@@ -600,6 +600,8 @@ class VaultAppState(
         private set
     var updateError by mutableStateOf<String?>(null)
         private set
+    var updateUpToDate by mutableStateOf(false)
+        private set
 
     val updaterSupported: Boolean get() = services.updater != null
     val appVersion: String get() = services.updater?.currentVersion() ?: "0.1.0"
@@ -608,8 +610,26 @@ class VaultAppState(
         val updater = services.updater ?: return
         updateBusy = true
         updateError = null
+        updateUpToDate = false
         try {
-            updateInfo = updater.checkForUpdate()
+            // AUD-017: the check result is explicit — an available
+            // update, an up-to-date confirmation, or a surfaced failure.
+            when (
+                val result =
+                    updater.checkForUpdate()
+            ) {
+                is com.isecure.core.platform.UpdateCheckResult.Available -> {
+                    updateInfo = result.info
+                }
+                com.isecure.core.platform.UpdateCheckResult.UpToDate -> {
+                    updateInfo = null
+                    updateUpToDate = true
+                }
+                is com.isecure.core.platform.UpdateCheckResult.Failed -> {
+                    updateInfo = null
+                    updateError = result.message ?: "Update check failed"
+                }
+            }
         } catch (e: Exception) {
             updateError = e.message
         } finally {

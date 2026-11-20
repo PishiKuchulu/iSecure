@@ -13,6 +13,7 @@ import { UserSettings } from '../types';
 import { localesMap, LocaleStrings } from '../locales';
 import { DriveBackupFile } from '../services/googleDriveBackup';
 import { isUpdaterSupported } from '../services/updater';
+import { isNativePlatform } from '../services/vaultStorage';
 import UpdateSection from './UpdateSection';
 
 interface AccordionSectionProps {
@@ -475,6 +476,11 @@ export default function SettingsView({
         </AccordionSection>
 
         {/* Web Display Protections */}
+        {/* AUD-020: the screenshot-protection toggle drives the native
+            FLAG_SECURE flag; since the web watermark was removed in
+            2.0.2 it controls nothing in a browser, so the section is
+            only rendered in the native app. */}
+        {isNativePlatform() && (
         <AccordionSection
           icon={<Lock className="w-4 h-4 text-emerald-500" />}
           title="Display & Privacy Overlay"
@@ -497,6 +503,7 @@ export default function SettingsView({
             </div>
           </label>
         </AccordionSection>
+        )}
 
         {/* Google Drive Zero-Knowledge Encrypted Cloud Backup */}
         <AccordionSection

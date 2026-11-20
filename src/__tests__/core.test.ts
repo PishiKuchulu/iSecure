@@ -272,3 +272,110 @@ test('updater: parseUpdateFeed validates the Cloudflare feed manifest strictly',
   assert.equal(parseUpdateFeed(null, '1.0.2'), null);
   assert.equal(parseUpdateFeed('nope', '1.0.2'), null);
 });
+
+import {
+  loadVault,
+  saveVaultEnvelope,
+  VaultFileSystem,
+} from '../services/vaultStorage';
+
+// On-disk contract shared with the Capacitor and KMP editions.
+const VAULT_PATH = 'vault/pishisecure_vault_v2.json';
+const TMP_PATH = `${VAULT_PATH}.tmp`;
+
+class FakeVaultFs implements VaultFileSystem {
+  files = new Map<string, string>();
+  failRenameOnce = false;
+  async exists(path: string) {
+    return this.files.has(path);
+  }
+  async read(path: string) {
+    const v = this.files.get(path);
+    if (v === undefined) throw new Error('absent');
+    return v;
+  }
+  async write(path: string, data: string) {
+    this.files.set(path, data);
+  }
+  async rename(from: string, to: string) {
+    if (this.failRenameOnce) {
+      this.failRenameOnce = false;
+      throw new Error('rename refuses to replace an existing file');
+    }
+    const v = this.files.get(from);
+    if (v === undefined) throw new Error('absent');
+    this.files.set(to, v);
+    this.files.delete(from);
+  }
+  async remove(path: string) {
+    if (!this.files.delete(path)) throw new Error('absent');
+  }
+  async mkdir() {}
+}
+
+async function makeEnvelopeJson(): Promise<string> {
+  const saltBytes = generateSalt(16);
+  const key = await deriveAesKey('Storage-Test-Master!42', saltBytes, 10_000);
+  const envelope = await encryptVaultPayload(
+    { entries: [], customCategories: [], lastBackupTime: '2026-01-01T00:00:00.000Z' },
+    key,
+    bytesToBase64(saltBytes),
+    10_000,
+  );
+  return JSON.stringify(envelope);
+}
+
+test('storage: load recovers a valid staged tmp envelope when the vault file is missing (AUD-015)', async () => {
+  const fs = new FakeVaultFs();
+  const json = await makeEnvelopeJson();
+  // The post-crash state of the plugin rename window: the vault path was
+  // deleted, the complete new envelope survives only in the tmp file.
+  fs.files.set(TMP_PATH, json);
+  const result = await loadVault({ fs, native: true });
+  assert.equal(result.status, 'ok');
+  // Recovery promotes the tmp envelope back to the vault path.
+  assert.equal(fs.files.get(VAULT_PATH), json);
+  assert.equal(fs.files.has(TMP_PATH), false);
+});
+
+test('storage: corrupt vault file with a valid tmp envelope recovers the tmp (AUD-015)', async () => {
+  const fs = new FakeVaultFs();
+  const json = await makeEnvelopeJson();
+  fs.files.set(VAULT_PATH, 'not json at all');
+  fs.files.set(TMP_PATH, json);
+  const result = await loadVault({ fs, native: true });
+  assert.equal(result.status, 'ok');
+  assert.equal(fs.files.get(VAULT_PATH), json);
+});
+
+test('storage: corrupt vault file without a tmp stays corrupt (P-03)', async () => {
+  const fs = new FakeVaultFs();
+  fs.files.set(VAULT_PATH, '{"version":2,"broken":true');
+  const result = await loadVault({ fs, native: true });
+  assert.equal(result.status, 'corrupt');
+});
+
+test('storage: invalid tmp bytes with no vault file are corrupt, never empty (AUD-015)', async () => {
+  const fs = new FakeVaultFs();
+  fs.files.set(TMP_PATH, 'garbage');
+  const result = await loadVault({ fs, native: true });
+  assert.equal(result.status, 'corrupt');
+});
+
+test('storage: no vault bytes anywhere is empty', async () => {
+  const fs = new FakeVaultFs();
+  const result = await loadVault({ fs, native: true });
+  assert.equal(result.status, 'empty');
+});
+
+test('storage: save then load round-trips, and save survives a refusing rename', async () => {
+  const fs = new FakeVaultFs();
+  const json = await makeEnvelopeJson();
+  const envelope = JSON.parse(json);
+  fs.failRenameOnce = true; // plugin-style refusal: fallback must complete
+  await saveVaultEnvelope(envelope, { fs, native: true });
+  assert.equal(fs.files.get(VAULT_PATH), json);
+  assert.equal(fs.files.has(TMP_PATH), false);
+  const result = await loadVault({ fs, native: true });
+  assert.equal(result.status, 'ok');
+});

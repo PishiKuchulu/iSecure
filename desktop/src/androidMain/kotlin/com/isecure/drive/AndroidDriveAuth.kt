@@ -103,6 +103,16 @@ class AndroidDriveAuth(private val activity: ComponentActivity) : DriveAuthProvi
             pendingToken = null
             throw Exception("Could not open Google sign-in: ${e.message}")
         }
-        return deferred.await()
+        try {
+            return deferred.await()
+        } finally {
+            // AUD-022: if the awaiter goes away first (the caller's
+            // sign-in timeout cancels it), release the pending slot —
+            // otherwise a stale deferred would wedge every later
+            // sign-in attempt as "already in progress". The launcher
+            // callback clears the slot itself before completing, so
+            // only clear when it is still THIS deferred.
+            if (pendingToken === deferred) pendingToken = null
+        }
     }
 }

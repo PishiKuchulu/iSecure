@@ -613,6 +613,13 @@ fun SettingsTab(state: VaultAppState) {
                         )
                     }
                 }
+                if (state.updateUpToDate) {
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        strings.upToDateMsg,
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                }
                 state.updateError?.let {
                     Text(
                         strings.updateFailedMsg,

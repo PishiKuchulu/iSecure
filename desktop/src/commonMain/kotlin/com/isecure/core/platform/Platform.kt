@@ -97,12 +97,25 @@ interface BiometricService {
 
 enum class InstallResult { STARTED, NEEDS_PERMISSION }
 
+/** Outcome of an update check (AUD-017). The UI must be able to tell
+ *  "up to date" and "check failed" apart from "update available" — a
+ *  bare nullable UpdateInfo collapses all three into silence. */
+sealed interface UpdateCheckResult {
+    data class Available(
+        val info: com.isecure.core.update.UpdateInfo,
+    ) : UpdateCheckResult
+
+    data object UpToDate : UpdateCheckResult
+
+    data class Failed(val message: String?) : UpdateCheckResult
+}
+
 /** In-app updater (Android; the port of the Capacitor updater chain):
  *  feed check → native download with a size cap → SHA-256 → same-signer
  *  verification → system installer handoff. */
 interface UpdateService {
     fun currentVersion(): String
-    suspend fun checkForUpdate(): com.isecure.core.update.UpdateInfo?
+    suspend fun checkForUpdate(): UpdateCheckResult
     suspend fun downloadAndVerify(
         info: com.isecure.core.update.UpdateInfo,
         onProgress: (Int) -> Unit,
